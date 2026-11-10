@@ -40,6 +40,7 @@ var blade_center_marker: Marker3D = null
 var blade_tip_marker: Marker3D = null
 var axe_trails: Array[GPUParticles3D] = []
 var hp_label_3d: Label3D = null
+var _stuck_timer: float = 0.0
 
 # Định nghĩa các tuyến cầu thang nối 3 tầng
 const STAIR_LINKS = [
@@ -62,14 +63,16 @@ func _ready() -> void:
 	floor_stop_on_slope = true
 	floor_constant_speed = true
 	floor_block_on_wall = true
+	safe_margin = 0.04
+	wall_min_slide_angle = deg_to_rad(10.0)
 
 	var col := CollisionShape3D.new()
 	col.name = "EnemyCollision"
 	var cap := CapsuleShape3D.new()
-	cap.radius = 0.38
-	cap.height = 1.75
+	cap.radius = 0.52
+	cap.height = 1.80
 	col.shape = cap
-	col.position = Vector3(0.0, 0.875, 0.0)
+	col.position = Vector3(0.0, 0.90, 0.0)
 	add_child(col)
 
 	# 2. Cấu hình NavigationAgent3D tìm đường qua cầu thang đa tầng
@@ -130,14 +133,20 @@ func _ready() -> void:
 	_action_lock_timer = 0.35
 
 func _setup_overhead_ui() -> void:
+	# Directive 18: Dọn sạch mọi node thanh máu cũ / trùng lặp nếu có
+	for child in get_children():
+		if child.name.begins_with("HealthBar") or child.name.begins_with("HPBar") or child.name.begins_with("OverheadHP") or child.name == "OverheadHealthBar3D":
+			child.queue_free()
+
+	# Chỉ duy trì DUY NHẤT 1 thanh máu 3D chuẩn trên đầu Bot tại Vector3(0.0, 2.35, 0.0)
 	hp_label_3d = Label3D.new()
-	hp_label_3d.name = "OverheadHPLabel"
-	hp_label_3d.position = Vector3(0.0, 2.25, 0.0)
+	hp_label_3d.name = "OverheadHealthBar3D"
+	hp_label_3d.position = Vector3(0.0, 2.35, 0.0)
 	hp_label_3d.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	hp_label_3d.no_depth_test = true
-	hp_label_3d.font_size = 42
+	hp_label_3d.font_size = 38
 	hp_label_3d.outline_size = 10
-	hp_label_3d.outline_modulate = Color(0.0, 0.0, 0.0)
+	hp_label_3d.outline_modulate = Color(0.0, 0.0, 0.0, 1.0)
 	add_child(hp_label_3d)
 	_update_overhead_hp()
 
@@ -176,6 +185,9 @@ func _find_skel_fallback(node: Node) -> Skeleton3D:
 func _physics_process(delta: float) -> void:
 	if is_dead:
 		return
+
+	# Directive 18: Khóa cứng rotation của node CharacterBody3D = Vector3.ZERO
+	rotation = Vector3.ZERO
 
 	# Chốt bảo hiểm phục hồi an toàn chống rơi mép bản đồ
 	if is_on_floor() and global_position.y >= -0.05:
@@ -247,6 +259,25 @@ func _physics_process(delta: float) -> void:
 
 	_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 	move_and_slide()
+
+	# Anti-Stuck Depenetration Guard (Giải cứu kẹt góc tường/vật cản)
+	if get_slide_collision_count() >= 2:
+		var horiz_spd := Vector2(velocity.x, velocity.z).length()
+		if horiz_spd < 0.05:
+			_stuck_timer += delta
+			if _stuck_timer >= 0.35:
+				var push_dir := Vector3.ZERO
+				for i in range(get_slide_collision_count()):
+					var c := get_slide_collision(i)
+					push_dir += c.get_normal()
+				push_dir.y = 0.0
+				if push_dir.length_squared() > 0.01:
+					global_position += push_dir.normalized() * 0.15
+				_stuck_timer = 0.0
+		else:
+			_stuck_timer = 0.0
+	else:
+		_stuck_timer = 0.0
 
 
 # ==============================================================================
@@ -323,6 +354,7 @@ func _get_nearest_stair_waypoint(my_y: float, target_y: float) -> Vector3:
 
 # ==============================================================================
 # HÀM BƯỚC LÊN BẬC THANG TỰ ĐỘNG (_apply_stair_step_up)
+# Giới hạn chỉ kích hoạt khi vật cản phía trước thuộc group "stairs"
 # ==============================================================================
 func _apply_stair_step_up(move_dir: Vector3, delta: float) -> void:
 	if move_dir.length_squared() < 0.01:
@@ -337,6 +369,10 @@ func _apply_stair_step_up(move_dir: Vector3, delta: float) -> void:
 	var foot_hit := space_state.intersect_ray(foot_query)
 
 	if not foot_hit.is_empty():
+		var col_obj = foot_hit.get("collider", null)
+		if col_obj == null or not col_obj.is_in_group("stairs"):
+			return
+
 		var step_from := global_position + horiz_dir * 0.60 + Vector3(0.0, 0.85, 0.0)
 		var step_to := global_position + horiz_dir * 0.60 + Vector3(0.0, 0.02, 0.0)
 		var down_query := PhysicsRayQueryParameters3D.create(step_from, step_to, 1)
@@ -344,6 +380,9 @@ func _apply_stair_step_up(move_dir: Vector3, delta: float) -> void:
 		var down_hit := space_state.intersect_ray(down_query)
 
 		if not down_hit.is_empty():
+			var down_obj = down_hit.get("collider", null)
+			if down_obj != null and not down_obj.is_in_group("stairs"):
+				return
 			var target_y: float = down_hit["position"].y
 			var step_h: float = target_y - global_position.y
 			var normal: Vector3 = down_hit["normal"]

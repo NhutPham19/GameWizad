@@ -72,6 +72,7 @@ var _dash_dir: Vector3 = Vector3.ZERO
 var _dash_timer: float = 0.0
 var _last_safe_floor_pos: Vector3 = Vector3(0.0, 0.05, 4.0)
 var external_move_dir: Vector3 = Vector3.ZERO
+var _stuck_timer: float = 0.0
 
 # --- Stats ---
 var hp: float = 100.0
@@ -90,15 +91,17 @@ func _ready() -> void:
 	floor_stop_on_slope = true
 	floor_constant_speed = true
 	floor_block_on_wall = true
+	safe_margin = 0.04
+	wall_min_slide_angle = deg_to_rad(10.0)
 
 	# --- Collision Shape ---
 	var col_shape := CollisionShape3D.new()
 	col_shape.name = "PlayerCollision"
 	var capsule := CapsuleShape3D.new()
-	capsule.radius = 0.38
-	capsule.height = 1.75
+	capsule.radius = 0.52
+	capsule.height = 1.80
 	col_shape.shape = capsule
-	col_shape.position = Vector3(0.0, 0.875, 0.0)
+	col_shape.position = Vector3(0.0, 0.90, 0.0)
 	add_child(col_shape)
 
 	# --- Visual Root ---
@@ -153,9 +156,40 @@ func _ready() -> void:
 	_play_anim(ANIM_IDLE)
 
 
+func _get_raw_physical_movement_input() -> Vector2:
+	# Nếu cửa sổ game mất tiêu điểm (Alt-Tab), dừng ngay lập tức
+	if not get_window().has_focus():
+		_force_release_all_movement_actions()
+		return Vector2.ZERO
+
+	# Đọc trực tiếp phím vật lý trên phần cứng (Bất chấp Unikey/EVKey đang bật tiếng Việt!)
+	var p_right := Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT)
+	var p_left  := Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT)
+	var p_down  := Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN)
+	var p_up    := Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP)
+
+	# Nếu không có phím vật lý nào đang được giữ trên bàn phím -> Xả sạch mọi Action bị kẹt!
+	if not (p_right or p_left or p_down or p_up):
+		_force_release_all_movement_actions()
+		return Vector2.ZERO
+
+	var raw := Vector2(
+		(1.0 if p_right else 0.0) - (1.0 if p_left else 0.0),
+		(1.0 if p_down else 0.0) - (1.0 if p_up else 0.0)
+	)
+	return raw.normalized() if raw.length_squared() > 1.0 else raw
+
+func _force_release_all_movement_actions() -> void:
+	for act in ["move_up", "move_down", "move_left", "move_right", "move_forward", "move_backward"]:
+		if Input.is_action_pressed(act):
+			Input.action_release(act)
+
 func _physics_process(delta: float) -> void:
 	if _is_dead:
 		return
+
+	# Directive 18: Khóa cứng rotation của node cha CharacterBody3D = 0, chỉ xoay visual_root
+	rotation = Vector3.ZERO
 
 	# --- Chốt bảo hiểm phục hồi tọa độ an toàn chống rơi mép map ---
 	if is_on_floor() and global_position.y >= -0.05:
@@ -195,7 +229,7 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
-	# --- Input (chỉ khi không bị action lock) ---
+	# --- Input (Đọc trực tiếp phím vật lý chống kẹt Unikey) ---
 	var input_dir := Vector3.ZERO
 	var can_act: bool = _action_lock_timer <= 0.0 and _jump_state == 0
 
@@ -203,23 +237,16 @@ func _physics_process(delta: float) -> void:
 		if external_move_dir.length_squared() > 0.01:
 			input_dir = external_move_dir.normalized()
 		else:
-			var cam := get_viewport().get_camera_3d()
-			if cam:
-				var cam_basis := cam.global_transform.basis
-				var screen_right := Vector3(cam_basis.x.x, 0.0, cam_basis.x.z).normalized()
-				var screen_up := Vector3(cam_basis.z.x, 0.0, cam_basis.z.z).normalized()
-
-				if Input.is_action_pressed("move_right"):
-					input_dir += screen_right
-				if Input.is_action_pressed("move_left"):
-					input_dir -= screen_right
-				if Input.is_action_pressed("move_forward"):
-					input_dir -= screen_up
-				if Input.is_action_pressed("move_backward"):
-					input_dir += screen_up
-
-				if input_dir.length_squared() > 0.01:
-					input_dir = input_dir.normalized()
+			var input_vec := _get_raw_physical_movement_input()
+			if input_vec.length_squared() > 0.001:
+				var cam := get_viewport().get_camera_3d()
+				var cam_right := Vector3.RIGHT
+				var cam_forward := Vector3.BACK
+				if cam != null:
+					cam_right = Vector3(cam.global_transform.basis.x.x, 0.0, cam.global_transform.basis.x.z).normalized()
+					cam_forward = Vector3(-cam.global_transform.basis.z.x, 0.0, -cam.global_transform.basis.z.z).normalized()
+				# input_vec.y < 0 là W (tiến), input_vec.y > 0 là S (lùi)
+				input_dir = (cam_right * input_vec.x + cam_forward * (-input_vec.y)).normalized()
 
 	# --- Xử lý hành động chiến đấu ---
 	if can_act:
@@ -252,24 +279,25 @@ func _physics_process(delta: float) -> void:
 		if Input.is_action_just_pressed("interact") and is_on_floor():
 			_do_jump()
 
-	# --- Di chuyển & Chạy Running_A ---
+	# --- Di chuyển & Chạy Running_A (Dừng tức thì khi nhả phím) ---
 	if _action_lock_timer <= 0.0 and _jump_state == 0:
 		if input_dir.length_squared() > 0.01:
 			velocity.x = input_dir.x * RUN_SPEED
 			velocity.z = input_dir.z * RUN_SPEED
 			if visual_root:
+				var target_yaw := atan2(input_dir.x, input_dir.z)
 				visual_root.rotation.y = lerp_angle(
 					visual_root.rotation.y,
-					atan2(input_dir.x, input_dir.z),
-					ROTATION_SPEED * delta
+					target_yaw,
+					minf(1.0, ROTATION_SPEED * delta)
 				)
 			_play_anim(ANIM_RUN)
-		elif Vector2(velocity.x, velocity.z).length() > 0.1:
-			_play_anim(ANIM_RUN)
 		else:
-			velocity.x = move_toward(velocity.x, 0.0, RUN_SPEED * 8.0 * delta)
-			velocity.z = move_toward(velocity.z, 0.0, RUN_SPEED * 8.0 * delta)
-			_play_anim(ANIM_IDLE)
+			# Dừng ngay lập tức khi thả tay khỏi phím
+			velocity.x = 0.0
+			velocity.z = 0.0
+			if is_on_floor():
+				_play_anim(ANIM_IDLE)
 
 	# --- Jump animation states ---
 	if _jump_state == 1:
@@ -286,9 +314,29 @@ func _physics_process(delta: float) -> void:
 	_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 	move_and_slide()
 
+	# --- Anti-Stuck Depenetration Guard (Giải cứu kẹt góc) ---
+	if get_slide_collision_count() >= 2:
+		var horiz_spd := Vector2(velocity.x, velocity.z).length()
+		if horiz_spd < 0.05 and input_dir.length_squared() > 0.01:
+			_stuck_timer += delta
+			if _stuck_timer >= 0.35:
+				var push_dir := Vector3.ZERO
+				for i in range(get_slide_collision_count()):
+					var c := get_slide_collision(i)
+					push_dir += c.get_normal()
+				push_dir.y = 0.0
+				if push_dir.length_squared() > 0.01:
+					global_position += push_dir.normalized() * 0.15
+				_stuck_timer = 0.0
+		else:
+			_stuck_timer = 0.0
+	else:
+		_stuck_timer = 0.0
+
 
 # ==============================================================================
 # HÀM BƯỚC LÊN BẬC THANG TỰ ĐỘNG (_apply_stair_step_up)
+# Giới hạn chỉ kích hoạt khi vật cản phía trước thuộc group "stairs"
 # ==============================================================================
 func _apply_stair_step_up(move_dir: Vector3, delta: float) -> void:
 	if move_dir.length_squared() < 0.01:
@@ -304,6 +352,10 @@ func _apply_stair_step_up(move_dir: Vector3, delta: float) -> void:
 	var foot_hit := space_state.intersect_ray(foot_query)
 
 	if not foot_hit.is_empty():
+		var col_obj = foot_hit.get("collider", null)
+		if col_obj == null or not col_obj.is_in_group("stairs"):
+			return
+
 		# Tia 2: Bắn từ phía trước ở độ cao 0.85m thẳng xuống để tìm mặt trên của bậc thang
 		var step_from := global_position + horiz_dir * 0.60 + Vector3(0.0, 0.85, 0.0)
 		var step_to := global_position + horiz_dir * 0.60 + Vector3(0.0, 0.02, 0.0)
@@ -312,6 +364,9 @@ func _apply_stair_step_up(move_dir: Vector3, delta: float) -> void:
 		var down_hit := space_state.intersect_ray(down_query)
 
 		if not down_hit.is_empty():
+			var down_obj = down_hit.get("collider", null)
+			if down_obj != null and not down_obj.is_in_group("stairs"):
+				return
 			var target_y: float = down_hit["position"].y
 			var step_h: float = target_y - global_position.y
 			var normal: Vector3 = down_hit["normal"]

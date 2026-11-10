@@ -103,12 +103,16 @@ func _build_tier_2_terrace() -> void:
 			_spawn_trimesh_piece(KayKitAssetRegistry.TILE_FLOOR, Vector3(x, TIER_HEIGHT, z), Vector3.ZERO, ground_container)
 
 	# 2. Hai cầu thang rộng nối Tầng 1 lên Tầng 2 (Visual only, flat ramp physics)
-	_spawn_visual_only_piece(KayKitAssetRegistry.STAIRS_WIDE, Vector3(-6.0, 0.0, -16.0), Vector3.ZERO, stairs_container)
-	_spawn_visual_only_piece(KayKitAssetRegistry.STAIRS_WIDE, Vector3(6.0, 0.0, -16.0), Vector3.ZERO, stairs_container)
+	var s1 := _spawn_visual_only_piece(KayKitAssetRegistry.STAIRS_WIDE, Vector3(-6.0, 0.0, -16.0), Vector3.ZERO, stairs_container)
+	var s2 := _spawn_visual_only_piece(KayKitAssetRegistry.STAIRS_WIDE, Vector3(6.0, 0.0, -16.0), Vector3.ZERO, stairs_container)
+	if s1:
+		s1.add_to_group("stairs")
+	if s2:
+		s2.add_to_group("stairs")
 
-	# Gắn Mặt Dốc Vật Lý Phẳng Êm Ái (SmoothStairRampCollider) cho cả 2 cầu thang
-	create_smooth_stair_ramp(boundaries_container, Vector3(-6.0, 0.0, -12.0), Vector3(-6.0, 4.0, -16.0), 5.0)
-	create_smooth_stair_ramp(boundaries_container, Vector3(6.0, 0.0, -12.0), Vector3(6.0, 4.0, -16.0), 5.0)
+	# Gắn Cầu thang kín chống lọt gầm & thành bảo vệ hai bên (LeakproofStairAssembly) cho cả 2 cầu thang
+	create_leakproof_stair_assembly(boundaries_container, Vector3(-6.0, 0.0, -12.0), Vector3(-6.0, 4.0, -16.0), 5.0)
+	create_leakproof_stair_assembly(boundaries_container, Vector3(6.0, 0.0, -12.0), Vector3(6.0, 4.0, -16.0), 5.0)
 
 	# 3. Vách đá chắn sườn đồi dọc theo Z = -16.0:
 	# TUYỆT ĐỐI CHỪA THÔNG ĐỘ RỘNG 4.5m+ quanh X = -6.0 và X = +6.0
@@ -136,8 +140,10 @@ func _build_tier_3_citadel() -> void:
 			_spawn_trimesh_piece(KayKitAssetRegistry.TILE_FLOOR, Vector3(x, TIER_HEIGHT * 2.0, z), Vector3.ZERO, ground_container)
 
 	# 2. Cầu thang rộng ở giữa nối Tầng 2 lên Tầng 3 (Visual only, flat ramp physics)
-	_spawn_visual_only_piece(KayKitAssetRegistry.STAIRS_WIDE, Vector3(0.0, TIER_HEIGHT, -28.0), Vector3.ZERO, stairs_container)
-	create_smooth_stair_ramp(boundaries_container, Vector3(0.0, 4.0, -24.0), Vector3(0.0, 8.0, -28.0), 5.0)
+	var s3 := _spawn_visual_only_piece(KayKitAssetRegistry.STAIRS_WIDE, Vector3(0.0, TIER_HEIGHT, -28.0), Vector3.ZERO, stairs_container)
+	if s3:
+		s3.add_to_group("stairs")
+	create_leakproof_stair_assembly(boundaries_container, Vector3(0.0, 4.0, -24.0), Vector3(0.0, 8.0, -28.0), 5.0)
 
 	# 3. Vách đá bao quanh chân Tầng 3 (độ cao Y = 4.0m)
 	# Vách phía Nam (Z = -28.0, chừa cầu thang thông thoáng ở X = 0)
@@ -156,19 +162,22 @@ func _build_tier_3_citadel() -> void:
 		_spawn_trimesh_piece(KayKitAssetRegistry.WALL_ELEVATION, Vector3(wx, TIER_HEIGHT, -40.0), Vector3(0, 180, 0), walls_container)
 
 # ------------------------------------------------------------------------------
-# HÀM TẠO MẶT DỐC VẬT LÝ ÊM ÁI (SMOOTH STAIR RAMP COLLIDER)
+# HÀM TẠO CẦU THANG KÍN CHỐNG LỌT GẦM & THÀNH BẢO VỆ HAI BÊN (LEAKPROOF STAIR ASSEMBLY)
 # ------------------------------------------------------------------------------
-static func create_smooth_stair_ramp(parent: Node3D, bottom_center: Vector3, top_center: Vector3, ramp_width: float = 5.0) -> StaticBody3D:
+static func create_leakproof_stair_assembly(parent: Node3D, bottom_center: Vector3, top_center: Vector3, ramp_width: float = 5.0) -> StaticBody3D:
 	var ramp_body := StaticBody3D.new()
 	ramp_body.name = "SmoothStairRampCollider"
 	ramp_body.collision_layer = 1
 	ramp_body.collision_mask = 0
+	ramp_body.add_to_group("stairs")
 	parent.add_child(ramp_body)
 
 	var diff := top_center - bottom_center
 	var ramp_len := diff.length()
+	var rise_height := top_center.y - bottom_center.y
 	var mid_pos := (bottom_center + top_center) * 0.5
 
+	# 1. Mặt dốc chính nối sàn dưới lên sàn trên
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()
 	box.size = Vector3(ramp_width, 0.25, ramp_len + 0.5)
@@ -178,17 +187,28 @@ static func create_smooth_stair_ramp(parent: Node3D, bottom_center: Vector3, top
 	ramp_body.position = mid_pos - Vector3(0.0, 0.12, 0.0)
 	ramp_body.look_at_from_position(ramp_body.position, top_center, Vector3.UP)
 
-	# Gắn 2 gờ chắn vô hình hai bên sườn cầu thang chống trượt ra ngoài mép
+	# 2. Hai vách chắn kín hai bên hông cầu thang (Chặn 100% đi xuyên từ phía ngang vào gầm thang)
 	var half_w := ramp_width * 0.5
 	for side in [-1.0, 1.0]:
 		var side_col := CollisionShape3D.new()
 		var side_box := BoxShape3D.new()
-		side_box.size = Vector3(0.35, 2.5, ramp_len + 0.5)
+		side_box.size = Vector3(0.45, rise_height + 1.5, ramp_len + 0.5)
 		side_col.shape = side_box
-		side_col.position = Vector3(side * (half_w + 0.15), 1.0, 0.0)
+		side_col.position = Vector3(side * (half_w + 0.22), (rise_height + 1.5) * 0.35, 0.0)
 		ramp_body.add_child(side_col)
 
+	# 3. Khối nêm đặc lấp kín hoàn toàn bên dưới gầm cầu thang
+	var under_col := CollisionShape3D.new()
+	var under_box := BoxShape3D.new()
+	under_box.size = Vector3(ramp_width, rise_height, ramp_len * 0.8)
+	under_col.shape = under_box
+	under_col.position = Vector3(0.0, -rise_height * 0.4, 0.0)
+	ramp_body.add_child(under_col)
+
 	return ramp_body
+
+static func create_smooth_stair_ramp(parent: Node3D, bottom_center: Vector3, top_center: Vector3, ramp_width: float = 5.0) -> StaticBody3D:
+	return create_leakproof_stair_assembly(parent, bottom_center, top_center, ramp_width)
 
 # ------------------------------------------------------------------------------
 # BỌC KÍN RÌA BẢN ĐỒ BẰNG TƯỜNG THÀNH KAYKIT & KHUNG VA CHẠM BIÊN VÔ HÌNH
@@ -241,6 +261,18 @@ func _build_perimeter_walls_and_colliders() -> void:
 	# Mép vực Tầng 3 -> Tầng 2 (Z = -28.0, Y = 8.0): chừa khe X = 0.0
 	_create_boundary_box(boundaries_container, "Ledge_Guard_T3_West", Vector3(-5.5, 9.0, -28.0), Vector3(5.0, 4.0, 0.8))
 	_create_boundary_box(boundaries_container, "Ledge_Guard_T3_East", Vector3(5.5, 9.0, -28.0), Vector3(5.0, 4.0, 0.8))
+
+	# 6. KHỐI ĐẶC 100% LÕI TẦNG 2 VÀ TẦNG 3 (SOLID TIER VOLUMES - CHẶN HOÀN TOÀN XUYÊN NGANG)
+	_build_solid_tier_cores()
+
+func _build_solid_tier_cores() -> void:
+	# Lõi đặc 100% bên dưới sàn Tầng 2: Y từ 0.0 -> 4.0m (Cao 4m, tâm Y = 2.0m)
+	# X từ -16.0 -> 16.0 (Rộng 32m), Z từ -16.2 -> -28.0 (Sâu 11.8m, tâm Z = -22.1m)
+	_create_boundary_box(boundaries_container, "Solid_Core_Tier2", Vector3(0.0, 2.0, -22.1), Vector3(32.0, 4.0, 11.8))
+
+	# Lõi đặc 100% bên dưới sàn Tầng 3: Y từ 0.0 -> 8.0m (Cao 8m, tâm Y = 4.0m)
+	# X từ -8.0 -> 8.0 (Rộng 16m), Z từ -28.2 -> -40.0 (Sâu 11.8m, tâm Z = -34.1m)
+	_create_boundary_box(boundaries_container, "Solid_Core_Tier3", Vector3(0.0, 4.0, -34.1), Vector3(16.0, 8.0, 11.8))
 
 static func _create_boundary_box(parent: Node3D, b_name: String, pos: Vector3, size: Vector3) -> StaticBody3D:
 	var sb := StaticBody3D.new()
@@ -326,6 +358,47 @@ func _place_props_and_obstacles() -> void:
 	_spawn_convex_piece(KayKitAssetRegistry.PROP_ROCK_B, Vector3(13.0, TIER_HEIGHT, -18.5), Vector3(0, -45, 0), props_container, 3.0)
 
 # ------------------------------------------------------------------------------
+# HÀM BỌC KHUNG VA CHẠM DÀY CÓ ĐỆM (PADDED SOLID STATIC BODY)
+# ------------------------------------------------------------------------------
+static func attach_padded_obstacle_collider(prop_node: Node3D, extra_padding: float = 0.28, min_height: float = 3.5) -> void:
+	var combined_aabb := AABB(Vector3(-0.6, 0.0, -0.6), Vector3(1.2, 2.5, 1.2))
+	var first := true
+	for child in prop_node.find_children("*", "MeshInstance3D", true, false):
+		var mi := child as MeshInstance3D
+		if mi.mesh != null:
+			var local_aabb := mi.transform * mi.get_aabb()
+			if first:
+				combined_aabb = local_aabb
+				first = false
+			else:
+				combined_aabb = combined_aabb.merge(local_aabb)
+
+	var s := maxf(0.001, prop_node.scale.x)
+	var pad := extra_padding / s
+	var min_h := min_height / s
+
+	var body := StaticBody3D.new()
+	body.name = "PaddedSolidCollider"
+	body.collision_layer = 1
+	body.collision_mask = 0
+	prop_node.add_child(body)
+
+	var col := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(
+		combined_aabb.size.x + pad * 2.0,
+		maxf(combined_aabb.size.y, min_h),
+		combined_aabb.size.z + pad * 2.0
+	)
+	col.shape = box
+	col.position = Vector3(
+		combined_aabb.get_center().x,
+		box.size.y * 0.5,
+		combined_aabb.get_center().z
+	)
+	body.add_child(col)
+
+# ------------------------------------------------------------------------------
 # HÀM TẠO VA CHẠM VẬT LÝ TRIMESH CHO SÀN, VÁCH TẦNG (LAYER 1)
 # ------------------------------------------------------------------------------
 func _spawn_trimesh_piece(path: String, pos: Vector3, rot_deg: Vector3, parent: Node) -> Node3D:
@@ -349,6 +422,9 @@ func _spawn_trimesh_piece(path: String, pos: Vector3, rot_deg: Vector3, parent: 
 					var sb := c as StaticBody3D
 					sb.collision_layer = 1
 					sb.collision_mask = 0
+
+	if parent == walls_container:
+		attach_padded_obstacle_collider(inst, 0.28, 3.5)
 
 	return inst
 
@@ -394,6 +470,7 @@ func _spawn_convex_piece(path: String, pos: Vector3, rot_deg: Vector3, parent: N
 					sb.collision_layer = 1
 					sb.collision_mask = 0
 
+	attach_padded_obstacle_collider(inst, 0.28, 3.5)
 	return inst
 
 # ------------------------------------------------------------------------------

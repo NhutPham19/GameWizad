@@ -44,13 +44,44 @@ func _build_ui() -> void:
 	overlay_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(overlay_root)
 
-	# --- 1. Drawer vẽ máu lính 2D chiếu theo 3D World ---
-	enemy_healthbar_drawer = Control.new()
-	enemy_healthbar_drawer.name = "EnemyHealthDrawer"
-	enemy_healthbar_drawer.set_anchors_preset(Control.PRESET_FULL_RECT)
-	enemy_healthbar_drawer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	overlay_root.add_child(enemy_healthbar_drawer)
-	enemy_healthbar_drawer.draw.connect(_on_enemy_health_drawer_draw)
+	# --- 1. NÚT CHƠI LẠI TRÊN ĐỈNH MÀN HÌNH (Phím R) ---
+	var restart_btn := Button.new()
+	restart_btn.name = "RestartButton"
+	restart_btn.text = "🔄 CHƠI LẠI (Phím R)"
+	restart_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	restart_btn.anchor_left = 0.5
+	restart_btn.anchor_right = 0.5
+	restart_btn.offset_left = -115.0
+	restart_btn.offset_right = 115.0
+	restart_btn.offset_top = 18.0
+	restart_btn.offset_bottom = 54.0
+
+	var btn_style := StyleBoxFlat.new()
+	btn_style.bg_color = Color(0.1, 0.13, 0.18, 0.92)
+	btn_style.border_width_left = 2
+	btn_style.border_width_top = 2
+	btn_style.border_width_right = 2
+	btn_style.border_width_bottom = 2
+	btn_style.border_color = Color(1.0, 0.75, 0.2, 0.95)
+	btn_style.corner_radius_top_left = 6
+	btn_style.corner_radius_top_right = 6
+	btn_style.corner_radius_bottom_right = 6
+	btn_style.corner_radius_bottom_left = 6
+	restart_btn.add_theme_stylebox_override("normal", btn_style)
+
+	var btn_hover := btn_style.duplicate() as StyleBoxFlat
+	btn_hover.bg_color = Color(0.18, 0.24, 0.35, 0.95)
+	btn_hover.border_color = Color(1.0, 0.9, 0.4, 1.0)
+	restart_btn.add_theme_stylebox_override("hover", btn_hover)
+
+	var btn_pressed := btn_style.duplicate() as StyleBoxFlat
+	btn_pressed.bg_color = Color(0.06, 0.08, 0.12, 0.95)
+	restart_btn.add_theme_stylebox_override("pressed", btn_pressed)
+
+	restart_btn.add_theme_font_size_override("font_size", 14)
+	restart_btn.add_theme_color_override("font_color", Color(1.0, 0.9, 0.5))
+	restart_btn.pressed.connect(func(): get_tree().reload_current_scene())
+	overlay_root.add_child(restart_btn)
 
 	# --- 2. GÓC TRÁI TRÊN: TRẠNG THÁI CHIẾN ĐẤU HERO ---
 	left_panel = PanelContainer.new()
@@ -223,9 +254,17 @@ func _build_ui() -> void:
 
 func _apply_mouse_filter_ignore(node: Node) -> void:
 	if node is Control:
+		if node.name == "RestartButton":
+			(node as Control).mouse_filter = Control.MOUSE_FILTER_STOP
+			return
 		(node as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for child in node.get_children():
 		_apply_mouse_filter_ignore(child)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_R or event.physical_keycode == KEY_R:
+			get_tree().reload_current_scene()
 
 func _process(delta: float) -> void:
 	# Yêu cầu vẽ lại thanh máu 2D lính
@@ -326,38 +365,7 @@ func _update_telemetry_display(delta: float) -> void:
 				t3 += 1
 	telemetry_enemies_label.text = "Enemies Alive: %d / %d (Tier 1: %d | Tier 2: %d | Tier 3: %d)" % [alive_count, max(5, enemies.size()), t1, t2, t3]
 
-# --- 4. VẼ THANH MÁU 2D TRÊN ĐẦU LÍNH ĐANG SỐNG (0% PRIMITIVE MESH) ---
+# --- 4. VẼ THANH MÁU 2D TRÊN ĐẦU LÍNH (ĐÃ TẮT ĐỂ TRÁNH TRÙNG LẶP THANH MÁU 3D) ---
 func _on_enemy_health_drawer_draw() -> void:
-	var cam := get_viewport().get_camera_3d()
-	if cam == null:
-		return
-
-	var enemies := get_tree().get_nodes_in_group("enemies")
-	for e in enemies:
-		if not is_instance_valid(e) or e.get("is_dead"):
-			continue
-
-		var enemy_pos: Vector3 = (e as Node3D).global_position + Vector3(0.0, 2.15, 0.0)
-		# Kiểm tra có nằm trước camera không
-		if cam.is_position_behind(enemy_pos):
-			continue
-
-		var screen_pos := cam.unproject_position(enemy_pos)
-		var max_h: float = e.get("max_hp") if "max_hp" in e else 80.0
-		var cur_h: float = e.get("hp") if "hp" in e else 80.0
-		var ratio: float = clampf(cur_h / max_h, 0.0, 1.0)
-
-		var bar_w := 64.0
-		var bar_h := 7.0
-		var rect_bg := Rect2(screen_pos.x - (bar_w * 0.5), screen_pos.y - (bar_h * 0.5), bar_w, bar_h)
-		var rect_fill := Rect2(rect_bg.position.x + 1.0, rect_bg.position.y + 1.0, (bar_w - 2.0) * ratio, bar_h - 2.0)
-
-		# Viền đen & nền tối
-		enemy_healthbar_drawer.draw_rect(rect_bg.grow(1.0), Color(0.0, 0.0, 0.0, 0.8), false, 1.0)
-		enemy_healthbar_drawer.draw_rect(rect_bg, Color(0.12, 0.14, 0.18, 0.85), true)
-
-		# Máu (Đỏ tươi / Cam khi là Boss Tầng 3)
-		var fill_color := Color(0.9, 0.25, 0.25, 0.95)
-		if max_h > 100.0:
-			fill_color = Color(1.0, 0.65, 0.15, 0.95) # Boss Tầng 3 màu cam
-		enemy_healthbar_drawer.draw_rect(rect_fill, fill_color, true)
+	# Directive 18: Chỉ duy trì duy nhất 1 thanh máu 3D OverheadHealthBar3D trên đầu mỗi Bot
+	return
