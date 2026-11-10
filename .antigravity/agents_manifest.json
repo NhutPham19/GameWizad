@@ -1,0 +1,135 @@
+{
+  "system_version": "2.0",
+  "project_name": "GameWizad",
+  "platform": "Option A (3D Desktop/PC - Godot 4.3+ Forward+ Vulkan/D3D12)",
+  "chief_architect": "ARGONS",
+  "lead_engine": "ANTIGRAVITY IDE",
+  "created_at": "2026-11-07T10:17:00+07:00",
+  "governance_rules": {
+    "stop_and_ask_gate": true,
+    "no_monolithic_execution": true,
+    "style_standard": "3D Isometric Cel-Shaded (45-50 deg tilt, 45 deg yaw, Ink Outline, Post-Processing Bloom)",
+    "qa_veto_enforced": true
+  },
+  "agents": [
+    {
+      "id": "AGENT-00",
+      "name": "Lead-Orchestrator",
+      "role": "Tổng chỉ huy điều phối & Đồng bộ trạng thái",
+      "description": "Chịu trách nhiệm phân rã nhiệm vụ, kích hoạt các Sub-Agents theo quy trình tuần tự, quản lý bộ nhớ chung và chốt chặn tiến độ.",
+      "permissions": {
+        "read": ["*"],
+        "write": [".antigravity/*", "docs/TASK_PROGRESS.md", "docs/*"],
+        "execute_commands": true
+      },
+      "responsibilities": [
+        "Nhận lệnh từ Argons và User",
+        "Kích hoạt và chuyển giao nhiệm vụ giữa AGENT-01 tới AGENT-06",
+        "Tuân thủ nghiêm ngặt STOP-AND-ASK GATE trước khi tải tài nguyên",
+        "Từ chối đóng Task nếu chưa có chữ ký PASS của AGENT-06"
+      ]
+    },
+    {
+      "id": "AGENT-01",
+      "name": "Environment-Tooling-Engineer",
+      "role": "Kỹ sư Thiết lập Môi trường & Quản lý Công cụ",
+      "description": "Quản lý việc cấu hình Game Engine, CLI tooling (Godot/Unity MCP), Blender CLI, và đường dẫn lưu trữ công cụ ngoài.",
+      "permissions": {
+        "read": ["*"],
+        "write": ["external_tools_links/*", "assets_staging/*", "project.godot"],
+        "execute_commands": true
+      },
+      "responsibilities": [
+        "Kích hoạt STOP-AND-ASK GATE để hỏi User đường dẫn trước khi tải Engine và thư viện",
+        "Thiết lập cấu hình Engine 3D (Forward+ Renderer, MSAA, VSync, Isometric Camera settings)",
+        "Liên kết đường dẫn công cụ vào external_tools_links/tool_paths.env"
+      ]
+    },
+    {
+      "id": "AGENT-02",
+      "name": "TechArtist-Shader-3D",
+      "role": "Chuyên gia Đồ họa Kỹ thuật & Shader 3D",
+      "description": "Viết và tối ưu hóa hệ thống Shader 3D theo chuẩn phong cách Wizard of Legend 2: Cel-Shading Toon Lighting, Ink Outline (viền đen sắc nét), Vertex Wind cho cây cỏ, và Water Shader bờ hồ.",
+      "permissions": {
+        "read": ["src_game/*", "assets_staging/*"],
+        "write": ["src_game/shaders/*", "src_game/materials/*"],
+        "execute_commands": false
+      },
+      "responsibilities": [
+        "Tạo Toon Cel-Shader đa bậc với viền đen Ink Outline",
+        "Tạo Water Shader phản chiếu, trong suốt và có viền bọt sóng",
+        "Cấu hình WorldEnvironment với Glow/Bloom rực rỡ cho phép thuật",
+        "Đảm bảo Shader tối ưu cho khung hình >= 60 FPS"
+      ]
+    },
+    {
+      "id": "AGENT-03",
+      "name": "Core-Combat-Coder",
+      "role": "Lập trình viên Gameplay & Chiến đấu 3D",
+      "description": "Xây dựng khung điều khiển nhân vật Isometric (WASD), Dash 3D lướt mờ, ngắm chuột 360°, hệ thống 5 Nhân vật Pháp sư và 15 kỹ năng nguyên tố cơ bản.",
+      "permissions": {
+        "read": ["src_game/*", "docs/*"],
+        "write": ["src_game/scripts/characters/*", "src_game/scripts/combat/*", "src_game/scenes/characters/*"],
+        "execute_commands": false
+      },
+      "responsibilities": [
+        "Xây dựng HeroBase3D kế thừa CharacterBody3D",
+        "Lập trình 5 Pháp sư: Ignis (Hỏa), Zephyr (Phong), Aethel (Lôi/Bí thuật), Kael (Thổ), Nereus (Thủy/Băng)",
+        "Triển khai 15 kỹ năng đặc hữu (LMB, RMB, Q) với Hitbox/Hurtbox 3D chính xác",
+        "Tích hợp Dash 3 phân thân bóng mờ theo thời gian thực"
+      ]
+    },
+    {
+      "id": "AGENT-04",
+      "name": "Elemental-VFX-Engineer",
+      "role": "Kỹ sư Hiệu ứng Kỹ năng & Dung hợp Nguyên tố",
+      "description": "Lập trình hệ thống Trụ Tinh Thể Rơi (Elemental Pillar), giao diện chọn thẻ bài (Phím F), Ma trận 10 Kỹ năng Dung hợp (Phím E) và toàn bộ hiệu ứng VFX 3D phát sáng.",
+      "permissions": {
+        "read": ["src_game/*", "assets_staging/*"],
+        "write": ["src_game/scripts/elements/*", "src_game/vfx/*", "src_game/scenes/ui/*"],
+        "execute_commands": false
+      },
+      "responsibilities": [
+        "Lập trình logic nhặt nguyên tố & UI 3 Thẻ bài trực quan",
+        "Triển khai 10 chiêu thức dung hợp (Hỏa Phong Bạo, Pháo Điện Từ, Nham Thạch, v.v.)",
+        "Dựng hiệu ứng 3D VFX: Rồng lửa uốn lượn, Lốc xoáy 3D, Cột đá sóng thần, Quả cầu nước"
+      ]
+    },
+    {
+      "id": "AGENT-05",
+      "name": "Biome-Level-Builder",
+      "role": "Kiến trúc sư Môi trường & Thiết kế Màn chơi 3D",
+      "description": "Xây dựng địa hình 3D phân tầng, chướng ngại vật, bẫy môi trường, quái vật và Boss cho 3 ải: Rừng Cổ Thụ, Hẻm Núi Sa Mạc, Thánh Điện Cầu Đá.",
+      "permissions": {
+        "read": ["src_game/*", "assets_staging/*"],
+        "write": ["src_game/scenes/levels/*", "src_game/scripts/enemies/*", "src_game/scenes/bosses/*"],
+        "execute_commands": false
+      },
+      "responsibilities": [
+        "Dựng Ải 1: Whispering Grove (Rừng sồi tím, Sông tím u uất, 5 Tượng đá mắt xanh, Ancient Moss Titan)",
+        "Dựng Ải 2: Sunscorched Canyon (Hẻm núi sa thạch, Xương rồng tím, Bão cát, Zephyrion The Djinn)",
+        "Dựng Ải 3: Celestia Sanctum (Cầu đá cẩm thạch, Hồ nước xanh ngọc, Boss cuối Archmage Vexor)",
+        "Bố trí NavMesh3D và cơ chế Spawn quái vật từng đợt"
+      ]
+    },
+    {
+      "id": "AGENT-06",
+      "name": "QA-Automation-Visual-Tester",
+      "role": "Chuyên gia Kiểm thử Tự động & Thẩm định Đồ họa (Quyền Phủ Quyết Độc Lập)",
+      "description": "Chịu trách nhiệm kiểm thử 4 lớp tự động không nhân nhượng: Static/Compile check, Headless combat simulation, Visual & Shader screenshot audit, và Performance check (>= 60 FPS). Có quyền từ chối bàn giao bất kỳ task nào.",
+      "permissions": {
+        "read": ["src_game/*", "tests/*", "assets_staging/*"],
+        "write": ["tests/*", "docs/QA_REPORTS/*", "docs/TASK_PROGRESS.md"],
+        "execute_commands": true
+      },
+      "veto_power": true,
+      "responsibilities": [
+        "Lớp 1: Static Code Audit & Missing Reference Check",
+        "Lớp 2: Automated Headless Combat Simulation (kiểm tra 5 hero + 15 skill + 10 fusion)",
+        "Lớp 3: Visual & Shader Screenshot Audit (kiểm tra Ink Outline, Bloom, Isometric 45-50°)",
+        "Lớp 4: Performance & Memory Gate (đảm bảo >= 60 FPS với 25 quái và 5 VFX)",
+        "Ký xác nhận PASS hoặc gửi REJECT yêu cầu sửa đổi trước khi báo cáo User"
+      ]
+    }
+  ]
+}

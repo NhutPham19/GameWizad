@@ -1,0 +1,19 @@
+[gd_resource type="ShaderMaterial" load_steps=3 format=3 uid="uid://b7v2yq9n8x5k1"]
+
+[ext_resource type="Shader" path="res://shaders/cel_toon.gdshader" id="1_cel"]
+[ext_resource type="Material" path="res://materials/outline_pass.tres" id="2_next_pass"]
+
+[resource]
+render_priority = 0
+next_pass = ExtResource("2_next_pass")
+shader = ExtResource("1_cel")
+shader_parameter/albedo_color = Color(0.9, 0.9, 0.9, 1)
+shader_parameter/shadow_tint = Color(0.38, 0.42, 0.52, 1)
+shader_parameter/light_threshold = 0.45
+shader_parameter/light_smoothness = 0.04
+shader_parameter/mid_threshold = 0.15
+shader_parameter/rim_color = Color(1, 1, 1, 0.4)
+shader_parameter/rim_threshold = 0.6
+shader_parameter/rim_smoothness = 0.05
+shader_parameter/emission_color = Color(0, 0, 0, 1)
+shader_parameter/emission_energy = 0.0

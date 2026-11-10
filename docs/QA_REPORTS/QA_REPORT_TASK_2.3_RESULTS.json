@@ -1,0 +1,86 @@
+{
+	"details": [
+		{
+			"name": "Skeleton Warrior stats: 70 HP, 15 DMG",
+			"status": "PASS"
+		},
+		{
+			"name": "Skeleton Warrior visual & floating HP bar",
+			"status": "PASS"
+		},
+		{
+			"name": "Skeleton Warrior damage reception (70 -> 50 HP)",
+			"status": "PASS"
+		},
+		{
+			"name": "Skeleton Archer stats: 45 HP, 8.5m range",
+			"status": "PASS"
+		},
+		{
+			"name": "Skeleton Archer bow visual",
+			"status": "PASS"
+		},
+		{
+			"name": "Skeleton Mage stats & magic staff visual",
+			"status": "PASS"
+		},
+		{
+			"name": "Boss Ancient Moss Titan max HP == 650",
+			"status": "PASS"
+		},
+		{
+			"name": "Boss glowing ancient blue eyes",
+			"status": "PASS"
+		},
+		{
+			"name": "Boss HP bar update signal (650 -> 600 HP)",
+			"status": "PASS"
+		},
+		{
+			"name": "Boss Telegraph Decal circle generated",
+			"status": "PASS"
+		},
+		{
+			"name": "Biome 1 Whispering Grove .tscn loaded",
+			"status": "PASS"
+		},
+		{
+			"name": "Biome 1 Terrain3D hierarchy generated",
+			"status": "PASS"
+		},
+		{
+			"name": "Biome 1 Purple River material loaded",
+			"status": "PASS"
+		},
+		{
+			"name": "Biome 1 Ancient Statue Eye material loaded",
+			"status": "PASS"
+		},
+		{
+			"name": "HeroManager linked in Biome 1",
+			"status": "PASS"
+		},
+		{
+			"name": "CombatHUD linked in Biome 1",
+			"status": "PASS"
+		},
+		{
+			"name": "Wave 1 started successfully",
+			"status": "PASS"
+		},
+		{
+			"name": "Wave 1 spawned 6 enemies (4 warriors + 2 archers)",
+			"status": "PASS"
+		},
+		{
+			"name": "Wave 1 cleared successfully",
+			"status": "PASS"
+		}
+	],
+	"failed": 0,
+	"overall_status": "PASS",
+	"passed": 19,
+	"task": "TASK_2.3",
+	"timestamp": "2026-11-07T11:43:13",
+	"total_tests": 19
+}

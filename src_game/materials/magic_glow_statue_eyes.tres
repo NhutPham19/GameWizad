@@ -1,0 +1,17 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3 uid="uid://d3m8k2v5q1w4"]
+
+[ext_resource type="Shader" path="res://shaders/cel_toon.gdshader" id="1_cel"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_cel")
+shader_parameter/albedo_color = Color(0.2, 0.7, 1, 1)
+shader_parameter/shadow_tint = Color(0.1, 0.35, 0.6, 1)
+shader_parameter/light_threshold = 0.5
+shader_parameter/light_smoothness = 0.05
+shader_parameter/mid_threshold = 0.2
+shader_parameter/rim_color = Color(0.5, 0.9, 1, 0.8)
+shader_parameter/rim_threshold = 0.5
+shader_parameter/rim_smoothness = 0.05
+shader_parameter/emission_color = Color(0.2, 0.8, 1, 1)
+shader_parameter/emission_energy = 4.5

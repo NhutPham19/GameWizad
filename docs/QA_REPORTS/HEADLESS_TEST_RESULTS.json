@@ -1,0 +1,93 @@
+{
+	"directive": "12_ARGONS_FREEZE_OLD_HEROES_AND_BUILD_2_NEW_HEROES",
+	"engine": {
+		"build": "official",
+		"hash": "77dcf97d82cbfe4e4615475fa52ca03da645dbd8",
+		"hex": 262912,
+		"major": 4,
+		"minor": 3,
+		"patch": 0,
+		"status": "stable",
+		"string": "4.3-stable (official)",
+		"timestamp": 0
+	},
+	"overall_status": "PASS",
+	"tests": [
+		{
+			"missing": [],
+			"name": "InputMap Verification",
+			"passed": true
+		},
+		{
+			"failed": [],
+			"name": "Shaders Compilation Check",
+			"passed": true
+		},
+		{
+			"failed": [],
+			"name": "Materials NextPass Check",
+			"passed": true
+		},
+		{
+			"name": "3D Viewport Simulation",
+			"passed": true
+		},
+		{
+			"name": "Task 2.4A: WASD & Facing",
+			"passed": true
+		},
+		{
+			"name": "Directive 07: Real-Time Core Drops",
+			"passed": true
+		},
+		{
+			"name": "Task 3.1: Biome 2 & Zephyrion",
+			"passed": true
+		},
+		{
+			"name": "Task 3.2: Biome 3 & Boss Vexor",
+			"passed": true
+		},
+		{
+			"name": "Task 3.3: Hero Select & Synth Audio",
+			"passed": true
+		},
+		{
+			"name": "Directive #5: Mouse Input & Diagnostics",
+			"passed": true
+		},
+		{
+			"name": "Melee Combat & Stances",
+			"passed": true
+		},
+		{
+			"name": "Hero Pool Pattern",
+			"passed": true
+		},
+		{
+			"name": "Directive 07: Stylized AAA HUD & AnimationTree 3-Layer",
+			"passed": true
+		},
+		{
+			"name": "Directive 08: BoxMesh Purge, 15 Spells, 3-Phase Combat, EXP & Systems",
+			"passed": true
+		},
+		{
+			"name": "Directive 10: Anti-Blur, Volumetric Fog Purge & Top-Right UI Clearance",
+			"passed": true
+		},
+		{
+			"name": "Directive 11 Cập Nhật: KayKit Weapons, Kenney Particles, UI Icons & Audio SFX",
+			"passed": true
+		},
+		{
+			"name": "Purge Character 6 & Freeze 5 Legacy Heroes",
+			"passed": true
+		},
+		{
+			"name": "Directive 12: Freeze Old Heroes & Build 2 New Heroes (Solaris & Nyx)",
+			"passed": true
+		}
+	],
+	"timestamp": "2026-11-08T14:24:13"
+}
