@@ -35,26 +35,34 @@ func _process(delta: float) -> bool:
 		print(">>> Capturing Screenshot 1: Overview...")
 		_save_screenshot("phase6_1_multitier_arena_overview.png")
 
-	# --- 2. SETUP & CAPTURE KNIGHT CLIMBING STAIRS (Frames 65..110) ---
+	# --- 2. SETUP & CAPTURE KNIGHT & MINION CLIMBING STAIRS (Frames 65..110) ---
 	if frame_count == 70:
-		print(">>> Setting up Scenario 2: Knight Climbing Stairs...")
+		print(">>> Setting up Scenario 2: Knight & Minion Climbing Stairs...")
 		if hero:
 			hero.global_position = Vector3(-6.0, 2.05, -14.0)
 			if hero.get("visual_root"):
 				hero.visual_root.rotation.y = PI
 			if hero.get("anim_player"):
 				hero.anim_player.play("Running_A")
+		if enemies.size() > 0:
+			var m := enemies[0] as EnemyMinion3D
+			if m:
+				m.global_position = Vector3(-6.0, 1.25, -13.0)
+				if m.get("visual_root"):
+					m.visual_root.rotation.y = PI
+				if m.get("anim_player"):
+					m.anim_player.play("Running_A")
 		if cam:
 			cam.global_position = Vector3(-6.0 + 8.0, 2.0 + 9.0, -14.0 + 8.0)
 			cam.size = 12.0
 
 	if frame_count == 110:
-		print(">>> Capturing Screenshot 2: Knight Climbing Stairs...")
+		print(">>> Capturing Screenshot 2: Knight & Minion Climbing Stairs...")
 		_save_screenshot("phase6_2_knight_climbing_stairs.png")
 
-	# --- 3. SETUP & CAPTURE MELEE SLASH & HIT VFX (Frames 115..170) ---
+	# --- 3. SETUP & CAPTURE MELEE SLASH & HIT VFX WITH -25 DMG (Frames 115..170) ---
 	if frame_count == 120:
-		print(">>> Setting up Scenario 3: Melee Slash & Hit VFX...")
+		print(">>> Setting up Scenario 3: Melee Slash & Hit VFX with -25 DMG...")
 		if hero:
 			hero.global_position = Vector3(-5.0, 0.05, -3.2)
 			if hero.get("visual_root"):
@@ -70,6 +78,7 @@ func _process(delta: float) -> bool:
 			target_minion = enemies[0] as EnemyMinion3D
 		if target_minion:
 			target_minion.global_position = Vector3(-6.0, 0.05, -4.0)
+			target_minion.take_damage(25.0, Vector3(-1, 0, -1))
 			if target_minion.get("visual_root"):
 				target_minion.visual_root.rotation.y = atan2(1.0, 1.0)
 			if target_minion.get("anim_player"):

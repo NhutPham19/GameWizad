@@ -2,9 +2,10 @@ class_name HeroKnight3D
 extends CharacterBody3D
 
 # ==============================================================================
-# HERO KNIGHT 3D — DIRECTIVE 15B, FILE LÕI SỐ 3
+# HERO KNIGHT 3D — DIRECTIVE 16 (PHASE 4 & 6)
 # Điều khiển duy nhất 1 Knight.glb: chuyển động mượt mà 12 kiểu dáng,
-# leo cầu thang 3 tầng, ngắm chuột Raycast 3D đa tầng.
+# leo cầu thang 3 tầng tự động (_apply_stair_step_up), ngắm chuột Raycast 3D đa tầng.
+# Đòn đánh thường LMB chém trúng quái 100% qua _apply_melee_hit_detection.
 # CharacterBody3D | Collision Layer 2, Mask 1|4
 # Pure AnimationPlayer cross-fade 0.12s (NO AnimationTree)
 # ==============================================================================
@@ -21,13 +22,12 @@ const ROTATION_SPEED: float = 16.0
 const CROSS_FADE_TIME: float = 0.12
 
 # --- Chiến đấu ---
-const MELEE_RANGE: float = 2.4
-const MELEE_FAN_ANGLE: float = 120.0  # Độ
+const MELEE_RANGE: float = 2.8
 const MELEE_DAMAGE: float = 25.0
 const SPIN_RANGE: float = 3.5
 const SPIN_DAMAGE: float = 35.0
 const SWORD_TRAIL_DURATION: float = 0.28
-const COMBO_WINDOW: float = 0.45  # Thời gian cho phép nhấn tiếp combo
+const COMBO_WINDOW: float = 0.45
 
 # --- Animation Names (KayKit 75 anims) ---
 const ANIM_IDLE := "Idle"
@@ -70,6 +70,8 @@ var _landing_timer: float = 0.0
 var _current_anim: String = ""
 var _dash_dir: Vector3 = Vector3.ZERO
 var _dash_timer: float = 0.0
+var _last_safe_floor_pos: Vector3 = Vector3(0.0, 0.05, 4.0)
+var external_move_dir: Vector3 = Vector3.ZERO
 
 # --- Stats ---
 var hp: float = 100.0
@@ -82,11 +84,12 @@ func _ready() -> void:
 	collision_layer = 2
 	collision_mask = 1 | 4
 
-	# --- Physics cho leo cầu thang ---
-	floor_snap_length = 0.45
-	floor_max_angle = deg_to_rad(52.0)
+	# --- Cấu hình CharacterBody3D chuẩn leo dốc / cầu thang ---
+	floor_snap_length = 0.60
+	floor_max_angle = deg_to_rad(58.0)
 	floor_stop_on_slope = true
 	floor_constant_speed = true
+	floor_block_on_wall = true
 
 	# --- Collision Shape ---
 	var col_shape := CollisionShape3D.new()
@@ -113,7 +116,7 @@ func _ready() -> void:
 	knight_model.name = "KnightModel"
 	visual_root.add_child(knight_model)
 
-	# --- Setup Animation Binder ---
+	# --- Setup Animation Binder (Opus 4.6) ---
 	var bind_result: Dictionary = KayKitAnimationBinder.setup_and_bind_internal_animations(knight_model)
 	if bind_result.is_empty():
 		push_error("[HeroKnight3D] Animation binding failed!")
@@ -125,7 +128,6 @@ func _ready() -> void:
 	# --- Dọn vũ khí mặc định, gắn Sword + Shield ---
 	KayKitAnimationBinder.clear_all_hand_slots(skeleton)
 
-	# Đợi 1 frame để queue_free hoàn tất trước khi gắn vũ khí mới
 	await get_tree().process_frame
 
 	# Gắn kiếm tay phải (kèm Blade Markers)
@@ -155,6 +157,13 @@ func _physics_process(delta: float) -> void:
 	if _is_dead:
 		return
 
+	# --- Chốt bảo hiểm phục hồi tọa độ an toàn chống rơi mép map ---
+	if is_on_floor() and global_position.y >= -0.05:
+		_last_safe_floor_pos = global_position
+	if global_position.y < -1.0:
+		global_position = _last_safe_floor_pos + Vector3(0.0, 0.15, 0.0)
+		velocity = Vector3.ZERO
+
 	# --- Timers ---
 	if _action_lock_timer > 0.0:
 		_action_lock_timer -= delta
@@ -182,6 +191,7 @@ func _physics_process(delta: float) -> void:
 		_dash_timer -= delta
 		velocity.x = _dash_dir.x * DASH_SPEED
 		velocity.z = _dash_dir.z * DASH_SPEED
+		_apply_stair_step_up(_dash_dir, delta)
 		move_and_slide()
 		return
 
@@ -190,24 +200,26 @@ func _physics_process(delta: float) -> void:
 	var can_act: bool = _action_lock_timer <= 0.0 and _jump_state == 0
 
 	if can_act:
-		# WASD chiếu theo camera isometric
-		var cam := get_viewport().get_camera_3d()
-		if cam:
-			var cam_basis := cam.global_transform.basis
-			var screen_right := Vector3(cam_basis.x.x, 0.0, cam_basis.x.z).normalized()
-			var screen_up := Vector3(cam_basis.z.x, 0.0, cam_basis.z.z).normalized()
+		if external_move_dir.length_squared() > 0.01:
+			input_dir = external_move_dir.normalized()
+		else:
+			var cam := get_viewport().get_camera_3d()
+			if cam:
+				var cam_basis := cam.global_transform.basis
+				var screen_right := Vector3(cam_basis.x.x, 0.0, cam_basis.x.z).normalized()
+				var screen_up := Vector3(cam_basis.z.x, 0.0, cam_basis.z.z).normalized()
 
-			if Input.is_action_pressed("move_right"):
-				input_dir += screen_right
-			if Input.is_action_pressed("move_left"):
-				input_dir -= screen_right
-			if Input.is_action_pressed("move_forward"):
-				input_dir -= screen_up
-			if Input.is_action_pressed("move_backward"):
-				input_dir += screen_up
+				if Input.is_action_pressed("move_right"):
+					input_dir += screen_right
+				if Input.is_action_pressed("move_left"):
+					input_dir -= screen_right
+				if Input.is_action_pressed("move_forward"):
+					input_dir -= screen_up
+				if Input.is_action_pressed("move_backward"):
+					input_dir += screen_up
 
-			if input_dir.length_squared() > 0.01:
-				input_dir = input_dir.normalized()
+				if input_dir.length_squared() > 0.01:
+					input_dir = input_dir.normalized()
 
 	# --- Xử lý hành động chiến đấu ---
 	if can_act:
@@ -240,18 +252,19 @@ func _physics_process(delta: float) -> void:
 		if Input.is_action_just_pressed("interact") and is_on_floor():
 			_do_jump()
 
-	# --- Di chuyển ---
+	# --- Di chuyển & Chạy Running_A ---
 	if _action_lock_timer <= 0.0 and _jump_state == 0:
 		if input_dir.length_squared() > 0.01:
 			velocity.x = input_dir.x * RUN_SPEED
 			velocity.z = input_dir.z * RUN_SPEED
-			# Xoay mặt đúng trục +Z của KayKit
 			if visual_root:
 				visual_root.rotation.y = lerp_angle(
 					visual_root.rotation.y,
 					atan2(input_dir.x, input_dir.z),
 					ROTATION_SPEED * delta
 				)
+			_play_anim(ANIM_RUN)
+		elif Vector2(velocity.x, velocity.z).length() > 0.1:
 			_play_anim(ANIM_RUN)
 		else:
 			velocity.x = move_toward(velocity.x, 0.0, RUN_SPEED * 8.0 * delta)
@@ -269,31 +282,62 @@ func _physics_process(delta: float) -> void:
 			_landing_timer = 0.25
 			_play_anim(ANIM_JUMP_LAND)
 
+	# Tự động bước lên bậc thang mượt mà
+	_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 	move_and_slide()
 
 
-# ==========================================================================
+# ==============================================================================
+# HÀM BƯỚC LÊN BẬC THANG TỰ ĐỘNG (_apply_stair_step_up)
+# ==============================================================================
+func _apply_stair_step_up(move_dir: Vector3, delta: float) -> void:
+	if move_dir.length_squared() < 0.01:
+		return
+	var space_state := get_world_3d().direct_space_state
+	var horiz_dir := Vector3(move_dir.x, 0.0, move_dir.z).normalized()
+
+	# Tia 1: Quét ngang ở độ cao cổ chân (0.15m) đến đầu gối xem có gặp bậc thang không
+	var foot_from := global_position + Vector3(0.0, 0.15, 0.0)
+	var foot_to := foot_from + horiz_dir * 0.70
+	var foot_query := PhysicsRayQueryParameters3D.create(foot_from, foot_to, 1)
+	foot_query.exclude = [get_rid()]
+	var foot_hit := space_state.intersect_ray(foot_query)
+
+	if not foot_hit.is_empty():
+		# Tia 2: Bắn từ phía trước ở độ cao 0.85m thẳng xuống để tìm mặt trên của bậc thang
+		var step_from := global_position + horiz_dir * 0.60 + Vector3(0.0, 0.85, 0.0)
+		var step_to := global_position + horiz_dir * 0.60 + Vector3(0.0, 0.02, 0.0)
+		var down_query := PhysicsRayQueryParameters3D.create(step_from, step_to, 1)
+		down_query.exclude = [get_rid()]
+		var down_hit := space_state.intersect_ray(down_query)
+
+		if not down_hit.is_empty():
+			var target_y: float = down_hit["position"].y
+			var step_h: float = target_y - global_position.y
+			var normal: Vector3 = down_hit["normal"]
+			if step_h > 0.02 and step_h <= 0.65 and normal.y >= 0.55:
+				global_position.y = move_toward(global_position.y, target_y + 0.02, 12.0 * delta)
+				velocity.y = maxf(velocity.y, 0.0)
+
+
+# ==============================================================================
 # ACTIONS
-# ==========================================================================
+# ==============================================================================
 
 func _do_melee_combo() -> void:
-	# Xoay mặt về phía chuột
 	_face_cursor()
 
 	var anim_name: String = COMBO_SEQUENCE[_combo_index]
 	_play_anim(anim_name)
 
-	# Tính thời gian lock từ animation
 	var anim_length: float = _get_anim_length(anim_name)
-	_action_lock_timer = anim_length - 0.05  # Cho phép hủy gần cuối
+	_action_lock_timer = anim_length - 0.05
 
-	# Bật vệt kiếm
 	_start_sword_trail()
 
-	# Gây sát thương diện rộng hình quạt
-	_deal_fan_damage(MELEE_RANGE, MELEE_FAN_ANGLE, MELEE_DAMAGE)
+	# Gây sát thương cận chiến ngay lập tức (LMB 25.0 HP)
+	_apply_melee_hit_detection(MELEE_DAMAGE, MELEE_RANGE, false)
 
-	# Chuẩn bị combo tiếp
 	_combo_index = (_combo_index + 1) % COMBO_SEQUENCE.size()
 	_combo_timer = COMBO_WINDOW + anim_length
 
@@ -304,11 +348,9 @@ func _do_melee_combo() -> void:
 func _do_block_counter() -> void:
 	_face_cursor()
 
-	# Block
 	_play_anim(ANIM_BLOCK)
 	_action_lock_timer = 0.35
 
-	# Sau Block -> Counter Stab
 	var timer := get_tree().create_timer(0.35)
 	timer.timeout.connect(func():
 		if _is_dead:
@@ -317,7 +359,6 @@ func _do_block_counter() -> void:
 		_action_lock_timer = _get_anim_length(ANIM_ATTACK_STAB) - 0.05
 		_start_sword_trail()
 
-		# Ground Decal shockwave
 		KayKitVFXManager.spawn_ground_decal_shockwave(
 			get_tree().current_scene,
 			global_position,
@@ -325,7 +366,7 @@ func _do_block_counter() -> void:
 			Color(0.3, 0.7, 1.0, 0.8)
 		)
 
-		# Đẩy lùi lính xung quanh
+		_apply_melee_hit_detection(20.0, 2.5, false)
 		_knockback_nearby_enemies(2.5, 5.0)
 	)
 
@@ -338,11 +379,9 @@ func _do_spin_attack() -> void:
 	_play_anim(ANIM_SPIN)
 	_action_lock_timer = 0.65
 
-	# Bật vệt kiếm rực sáng
 	_start_sword_trail()
-	_sword_trail_timer = 0.6  # Kéo dài hơn bình thường
+	_sword_trail_timer = 0.6
 
-	# Ground Decal
 	KayKitVFXManager.spawn_ground_decal_shockwave(
 		get_tree().current_scene,
 		global_position,
@@ -350,8 +389,8 @@ func _do_spin_attack() -> void:
 		Color(1.0, 0.4, 0.1, 0.9)
 	)
 
-	# Sát thương diện rộng 360°
-	_deal_fan_damage(SPIN_RANGE, 360.0, SPIN_DAMAGE)
+	# Sát thương diện rộng 360 độ
+	_apply_melee_hit_detection(SPIN_DAMAGE, SPIN_RANGE, true)
 
 	velocity.x = 0.0
 	velocity.z = 0.0
@@ -362,11 +401,9 @@ func _do_ranged_throw() -> void:
 	_play_anim(ANIM_THROW)
 	_action_lock_timer = _get_anim_length(ANIM_THROW) - 0.05
 
-	# Lấy vị trí chuột đa tầng
 	var target_pos := _get_cursor_world_pos()
 	var start_pos := global_position + Vector3(0.0, 1.2, 0.0)
 
-	# Phóng smokebomb
 	KayKitVFXManager.spawn_kaykit_3d_projectile(
 		get_tree().current_scene, start_pos, target_pos, "smokebomb"
 	)
@@ -376,7 +413,6 @@ func _do_ranged_throw() -> void:
 
 
 func _do_dodge() -> void:
-	# Hướng né: theo input hoặc hướng đang nhìn
 	var cam := get_viewport().get_camera_3d()
 	var dodge_dir := Vector3.ZERO
 	if cam:
@@ -394,9 +430,8 @@ func _do_dodge() -> void:
 			dodge_dir += screen_up
 
 	if dodge_dir.length_squared() < 0.01:
-		# Mặc định né về phía đang nhìn
 		if visual_root:
-			dodge_dir = -visual_root.global_transform.basis.z
+			dodge_dir = Vector3(sin(visual_root.rotation.y), 0.0, cos(visual_root.rotation.y)).normalized()
 		else:
 			dodge_dir = Vector3.FORWARD
 
@@ -405,7 +440,6 @@ func _do_dodge() -> void:
 	_dash_timer = DASH_DURATION
 	_action_lock_timer = DASH_DURATION
 
-	# Xoay visual về hướng né
 	if visual_root:
 		visual_root.rotation.y = atan2(dodge_dir.x, dodge_dir.z)
 
@@ -415,43 +449,74 @@ func _do_dodge() -> void:
 func _do_jump() -> void:
 	velocity.y = JUMP_VELOCITY
 	_jump_state = 1
-	_action_lock_timer = 0.1  # Tạm khóa input ngắn khi nhảy
+	_action_lock_timer = 0.1
 	_play_anim(ANIM_JUMP_START)
 
 
-# ==========================================================================
-# DAMAGE
-# ==========================================================================
+# ==============================================================================
+# HÀM PHÁT HIỆN & GÂY SÁT THƯƠNG CẬN CHIẾN CHUẨN XÁC (_apply_melee_hit_detection)
+# ==============================================================================
+func _apply_melee_hit_detection(damage: float, hit_radius: float = 2.8, full_circle: bool = false) -> int:
+	var hit_enemies: Array[Node] = []
+	var facing_dir := Vector3(sin(visual_root.rotation.y), 0.0, cos(visual_root.rotation.y)).normalized() if visual_root else Vector3.MODEL_FRONT
+	var blade_zone_center := global_position + facing_dir * 1.15
+	if is_instance_valid(blade_center_marker):
+		blade_zone_center = blade_center_marker.global_position
 
-## Gây sát thương hình quạt phía trước
-func _deal_fan_damage(radius: float, angle_deg: float, damage: float) -> void:
-	var enemies := get_tree().get_nodes_in_group("enemy")
-	var my_pos := global_position
-	var forward := -visual_root.global_transform.basis.z if visual_root else Vector3.FORWARD
-	forward.y = 0.0
-	forward = forward.normalized()
-	var half_angle := deg_to_rad(angle_deg * 0.5)
+	# 1. Gom toàn bộ quái từ cả group "enemies", "enemy" VÀ Physics Sphere Query (Layer 4)
+	var candidates: Array[Node] = []
+	for g_name in ["enemies", "enemy"]:
+		for node in get_tree().get_nodes_in_group(g_name):
+			if is_instance_valid(node) and node != self and not candidates.has(node):
+				candidates.append(node)
 
-	for enemy_node in enemies:
-		if enemy_node is Node3D and is_instance_valid(enemy_node):
-			var to_enemy: Vector3 = enemy_node.global_position - my_pos
-			to_enemy.y = 0.0
-			var dist := to_enemy.length()
-			if dist > radius or dist < 0.01:
-				continue
-			var dir_to_enemy := to_enemy.normalized()
-			var angle_to_enemy := acos(clamp(forward.dot(dir_to_enemy), -1.0, 1.0))
-			if angle_to_enemy <= half_angle:
-				# Gây sát thương
-				if enemy_node.has_method("take_damage"):
-					enemy_node.take_damage(damage, forward)
-				# VFX trúng đòn tại ngực
-				KayKitVFXManager.spawn_hit_impact_at_chest(enemy_node)
+	var space_state := get_world_3d().direct_space_state
+	var sphere := SphereShape3D.new()
+	sphere.radius = hit_radius + 0.5
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = sphere
+	query.transform = Transform3D(Basis.IDENTITY, global_position + Vector3(0.0, 0.9, 0.0))
+	query.collision_mask = 4
+	for hit_dict in space_state.intersect_shape(query, 16):
+		var col_obj = hit_dict.get("collider")
+		if is_instance_valid(col_obj) and col_obj != self and not candidates.has(col_obj):
+			candidates.append(col_obj)
+
+	# 2. Kiểm tra khoảng cách và trừ máu trực tiếp
+	for target in candidates:
+		if not (target is Node3D) or not target.has_method("take_damage"):
+			continue
+		var t_node := target as Node3D
+		var t_pos := t_node.global_position
+		# Cho phép chênh lệch độ cao lên tới 2.0m (đánh trúng cả trên cầu thang)
+		if absf(t_pos.y - global_position.y) > 2.0:
+			continue
+
+		var flat_diff := Vector3(t_pos.x - global_position.x, 0.0, t_pos.z - global_position.z)
+		var dist_to_hero := flat_diff.length()
+		var dist_to_blade := Vector2(t_pos.x - blade_zone_center.x, t_pos.z - blade_zone_center.z).length()
+
+		var is_valid_hit := false
+		if full_circle:
+			is_valid_hit = (dist_to_hero <= hit_radius)
+		else:
+			var dir_to_target := flat_diff.normalized() if dist_to_hero > 0.001 else facing_dir
+			var dot_val := facing_dir.dot(dir_to_target)
+			# Trúng đòn nếu: đứng sát người (<= 1.5m), hoặc gần lưỡi kiếm (<= 1.85m), hoặc trong cung quạt 160 độ phía trước
+			is_valid_hit = (dist_to_hero <= 1.5) or (dist_to_blade <= 1.85) or (dist_to_hero <= hit_radius and dot_val >= -0.25)
+
+		if is_valid_hit:
+			var kb_dir := flat_diff.normalized() if dist_to_hero > 0.01 else facing_dir
+			target.take_damage(damage, kb_dir)
+			KayKitVFXManager.spawn_hit_impact_at_chest(t_node)
+			hit_enemies.append(target)
+
+	return hit_enemies.size()
 
 
 ## Đẩy lùi lính xung quanh
 func _knockback_nearby_enemies(radius: float, force: float) -> void:
-	var enemies := get_tree().get_nodes_in_group("enemy")
+	var enemies := get_tree().get_nodes_in_group("enemies")
 	for enemy_node in enemies:
 		if enemy_node is Node3D and is_instance_valid(enemy_node):
 			var to_enemy: Vector3 = enemy_node.global_position - global_position
@@ -482,9 +547,9 @@ func _die() -> void:
 	collision_layer = 0
 
 
-# ==========================================================================
+# ==============================================================================
 # HELPERS
-# ==========================================================================
+# ==============================================================================
 
 ## Phát animation với cross-fade, tránh phát lại animation đang chạy
 func _play_anim(anim_name: String) -> void:
@@ -503,7 +568,7 @@ func _play_anim(anim_name: String) -> void:
 func _get_anim_length(anim_name: String) -> float:
 	if anim_player and anim_player.has_animation(anim_name):
 		return anim_player.get_animation(anim_name).length
-	return 0.5  # Fallback
+	return 0.5
 
 
 ## Bật vệt kiếm tạm thời
@@ -527,23 +592,20 @@ func _get_cursor_world_pos() -> Vector3:
 	if cam == null:
 		return global_position + Vector3.FORWARD * 3.0
 
-	# Kiểm tra nếu camera có hàm chuyên dụng
 	if cam.has_method("get_accurate_ground_cursor_pos"):
 		return cam.get_accurate_ground_cursor_pos(get_viewport())
 
-	# Fallback: tự raycast
 	var mouse_pos := get_viewport().get_mouse_position()
 	var ray_origin := cam.project_ray_origin(mouse_pos)
 	var ray_dir := cam.project_ray_normal(mouse_pos)
 	var ray_end := ray_origin + ray_dir * 500.0
 
 	var space_state := get_world_3d().direct_space_state
-	var query := PhysicsRayQueryParameters3D.create(ray_origin, ray_end, 1)  # Layer 1: Ground
+	var query := PhysicsRayQueryParameters3D.create(ray_origin, ray_end, 1)
 	var hit := space_state.intersect_ray(query)
 	if not hit.is_empty():
 		return hit["position"]
 
-	# Fallback Plane
 	var plane := Plane(Vector3.UP, global_position.y)
 	var pos = plane.intersects_ray(ray_origin, ray_dir)
 	return pos if pos != null else global_position

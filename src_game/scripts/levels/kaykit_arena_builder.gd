@@ -2,14 +2,14 @@ class_name KayKitArenaBuilder
 extends Node3D
 
 # ==============================================================================
-# KAYKIT MULTI-TIER ARENA BUILDER - DIRECTIVE 14 & 15A (PHASE 2)
+# KAYKIT MULTI-TIER ARENA BUILDER - DIRECTIVE 16 (PHASE 4 & 6)
 # 100% KAYKIT MODELS (.GLB/.GLTF) - ZERO PRIMITIVE GEOMETRY
 # 3 Tier Elevations:
 #   Tier 1: Y = 0.0m  (Central Valley Plaza 32m x 32m)
 #   Tier 2: Y = 4.0m  (Northern Terrace 32m x 12m, with 2 Wide Stairs)
 #   Tier 3: Y = 8.0m  (Ancient Citadel Summit 16m x 12m, with 1 Wide Stair)
-# Colliders: Trimesh for floors/stairs/walls, Convex for props (Layer 1)
-# Seamless NavigationRegion3D bridging all 3 tiers
+# Colliders: SmoothStairRampCollider for seamless stair climbing,
+#            Invisible boundary colliders & KayKit perimeter walls to prevent falls.
 # ==============================================================================
 
 const KayKitAssetRegistry = preload("res://scripts/core/kaykit_asset_registry.gd")
@@ -28,23 +28,30 @@ var ground_container: Node3D = null
 var walls_container: Node3D = null
 var stairs_container: Node3D = null
 var props_container: Node3D = null
+var boundaries_container: Node3D = null
+var _is_built: bool = false
 
 func _ready() -> void:
 	build_arena()
 
 func build_arena() -> void:
+	if _is_built:
+		return
+	_is_built = true
 	if not nav_region:
 		nav_region = get_node_or_null("NavigationRegion3D") as NavigationRegion3D
 	if not nav_region:
 		nav_region = NavigationRegion3D.new()
 		nav_region.name = "NavigationRegion3D"
 		add_child(nav_region)
-		
+
 	_setup_containers()
 	_build_tier_1_plaza()
 	_build_tier_2_terrace()
 	_build_tier_3_citadel()
 	_place_props_and_obstacles()
+	_build_perimeter_walls_and_colliders()
+	_setup_stair_links()
 	_setup_lighting_and_environment()
 	_setup_navigation()
 	_spawn_enemies()
@@ -52,22 +59,26 @@ func build_arena() -> void:
 func _setup_containers() -> void:
 	if ground_container != null and is_instance_valid(ground_container):
 		return
-		
+
 	ground_container = Node3D.new()
 	ground_container.name = "GroundTiles"
 	nav_region.add_child(ground_container)
-	
+
 	walls_container = Node3D.new()
 	walls_container.name = "ElevationWalls"
 	nav_region.add_child(walls_container)
-	
+
 	stairs_container = Node3D.new()
 	stairs_container.name = "Stairs"
 	nav_region.add_child(stairs_container)
-	
+
 	props_container = Node3D.new()
 	props_container.name = "Props"
 	nav_region.add_child(props_container)
+
+	boundaries_container = Node3D.new()
+	boundaries_container.name = "Boundaries"
+	nav_region.add_child(boundaries_container)
 
 # ------------------------------------------------------------------------------
 # TẦNG 1: QUẢNG TRƯỜNG THUNG LŨNG (Y = 0.0m, 32m x 32m, 8x8 TILE_FLOOR)
@@ -81,7 +92,7 @@ func _build_tier_1_plaza() -> void:
 
 # ------------------------------------------------------------------------------
 # TẦNG 2: ĐÀI CAO PHÍA BẮC (Y = 4.0m, 32m x 12m, 8x3 TILE_FLOOR)
-# Vách đá dọc Z = -16.0 chừa 2 Cầu Thang Rộng tại X = -6.0m và X = +6.0m
+# Vách đá dọc Z = -16.0 chừa 2 Cầu Thang Rộng tại X = -6.0m và X = +6.0m (Mở thông 100%)
 # ------------------------------------------------------------------------------
 func _build_tier_2_terrace() -> void:
 	# 1. Mặt sàn Tầng 2 (3 hàng Z: -18, -22, -26)
@@ -90,17 +101,22 @@ func _build_tier_2_terrace() -> void:
 		for col in range(8):
 			var x := -14.0 + (col * TILE_SIZE) # X in [-16, 16]
 			_spawn_trimesh_piece(KayKitAssetRegistry.TILE_FLOOR, Vector3(x, TIER_HEIGHT, z), Vector3.ZERO, ground_container)
-			
-	# 2. Hai cầu thang rộng nối Tầng 1 lên Tầng 2
-	# Local Z: 4.0 (chân cầu thang tại Z = -12.0, Y = 0.0m), Local Z: 0.0 (đỉnh tại Z = -16.0, Y = 4.0m)
-	_spawn_trimesh_piece(KayKitAssetRegistry.STAIRS_WIDE, Vector3(-6.0, 0.0, -16.0), Vector3.ZERO, stairs_container)
-	_spawn_trimesh_piece(KayKitAssetRegistry.STAIRS_WIDE, Vector3(6.0, 0.0, -16.0), Vector3.ZERO, stairs_container)
-	
-	# 3. Vách đá chắn sườn đồi dọc theo Z = -16.0 (chừa khe cầu thang tại X = ±6.0)
-	var wall_x_cols = [-14.0, -10.0, -2.0, 2.0, 10.0, 14.0]
+
+	# 2. Hai cầu thang rộng nối Tầng 1 lên Tầng 2 (Visual only, flat ramp physics)
+	_spawn_visual_only_piece(KayKitAssetRegistry.STAIRS_WIDE, Vector3(-6.0, 0.0, -16.0), Vector3.ZERO, stairs_container)
+	_spawn_visual_only_piece(KayKitAssetRegistry.STAIRS_WIDE, Vector3(6.0, 0.0, -16.0), Vector3.ZERO, stairs_container)
+
+	# Gắn Mặt Dốc Vật Lý Phẳng Êm Ái (SmoothStairRampCollider) cho cả 2 cầu thang
+	create_smooth_stair_ramp(boundaries_container, Vector3(-6.0, 0.0, -12.0), Vector3(-6.0, 4.0, -16.0), 5.0)
+	create_smooth_stair_ramp(boundaries_container, Vector3(6.0, 0.0, -12.0), Vector3(6.0, 4.0, -16.0), 5.0)
+
+	# 3. Vách đá chắn sườn đồi dọc theo Z = -16.0:
+	# TUYỆT ĐỐI CHỪA THÔNG ĐỘ RỘNG 4.5m+ quanh X = -6.0 và X = +6.0
+	# Đặt tường tại các vị trí không chạm vào cầu thang (-14.0, -10.5, 0.0, 10.5, 14.0)
+	var wall_x_cols = [-14.0, -10.5, 0.0, 10.5, 14.0]
 	for wx in wall_x_cols:
 		_spawn_trimesh_piece(KayKitAssetRegistry.WALL_ELEVATION, Vector3(wx, 0.0, -16.0), Vector3.ZERO, walls_container)
-		
+
 	# 4. Vách đá hai bên sườn Tây (X = -16.0) và sườn Đông (X = +16.0) của Tầng 2
 	for row in range(3):
 		var wz := -18.0 - (row * TILE_SIZE)
@@ -109,7 +125,7 @@ func _build_tier_2_terrace() -> void:
 
 # ------------------------------------------------------------------------------
 # TẦNG 3: ĐỈNH ĐÀI CỔ PHÍA BẮC (Y = 8.0m, 16m x 12m, 4x3 TILE_FLOOR)
-# Vách đá dọc Z = -28.0 chừa 1 Cầu Thang Rộng ở chính giữa X = 0.0m
+# Vách đá dọc Z = -28.0 chừa 1 Cầu Thang Rộng ở chính giữa X = 0.0m (Mở thông 100%)
 # ------------------------------------------------------------------------------
 func _build_tier_3_citadel() -> void:
 	# 1. Mặt sàn Tầng 3 (4 cột X in [-8, 8], 3 hàng Z in [-40, -28])
@@ -118,51 +134,163 @@ func _build_tier_3_citadel() -> void:
 		for col in range(4):
 			var x := -6.0 + (col * TILE_SIZE) # -6, -2, 2, 6 (X in [-8, 8])
 			_spawn_trimesh_piece(KayKitAssetRegistry.TILE_FLOOR, Vector3(x, TIER_HEIGHT * 2.0, z), Vector3.ZERO, ground_container)
-			
-	# 2. Một cầu thang rộng ở giữa nối Tầng 2 lên Tầng 3
-	# Local Z: 4.0 (chân tại Z = -24.0, Y = 4.0m), Local Z: 0.0 (đỉnh tại Z = -28.0, Y = 8.0m)
-	_spawn_trimesh_piece(KayKitAssetRegistry.STAIRS_WIDE, Vector3(0.0, TIER_HEIGHT, -28.0), Vector3.ZERO, stairs_container)
-	
+
+	# 2. Cầu thang rộng ở giữa nối Tầng 2 lên Tầng 3 (Visual only, flat ramp physics)
+	_spawn_visual_only_piece(KayKitAssetRegistry.STAIRS_WIDE, Vector3(0.0, TIER_HEIGHT, -28.0), Vector3.ZERO, stairs_container)
+	create_smooth_stair_ramp(boundaries_container, Vector3(0.0, 4.0, -24.0), Vector3(0.0, 8.0, -28.0), 5.0)
+
 	# 3. Vách đá bao quanh chân Tầng 3 (độ cao Y = 4.0m)
-	# Vách phía Nam (Z = -28.0, chừa cầu thang ở X = 0)
+	# Vách phía Nam (Z = -28.0, chừa cầu thang thông thoáng ở X = 0)
 	_spawn_trimesh_piece(KayKitAssetRegistry.WALL_ELEVATION, Vector3(-6.0, TIER_HEIGHT, -28.0), Vector3.ZERO, walls_container)
 	_spawn_trimesh_piece(KayKitAssetRegistry.WALL_ELEVATION, Vector3(6.0, TIER_HEIGHT, -28.0), Vector3.ZERO, walls_container)
-	
+
 	# Vách phía Tây (X = -8.0) và phía Đông (X = +8.0) của Tầng 3
 	for row in range(3):
 		var wz := -30.0 - (row * TILE_SIZE)
 		_spawn_trimesh_piece(KayKitAssetRegistry.WALL_ELEVATION, Vector3(-8.0, TIER_HEIGHT, wz), Vector3(0, 90, 0), walls_container)
 		_spawn_trimesh_piece(KayKitAssetRegistry.WALL_ELEVATION, Vector3(8.0, TIER_HEIGHT, wz), Vector3(0, -90, 0), walls_container)
-		
+
 	# Vách phía Bắc (Z = -40.0) của Tầng 3
 	for col in range(4):
 		var wx := -6.0 + (col * TILE_SIZE)
 		_spawn_trimesh_piece(KayKitAssetRegistry.WALL_ELEVATION, Vector3(wx, TIER_HEIGHT, -40.0), Vector3(0, 180, 0), walls_container)
 
 # ------------------------------------------------------------------------------
+# HÀM TẠO MẶT DỐC VẬT LÝ ÊM ÁI (SMOOTH STAIR RAMP COLLIDER)
+# ------------------------------------------------------------------------------
+static func create_smooth_stair_ramp(parent: Node3D, bottom_center: Vector3, top_center: Vector3, ramp_width: float = 5.0) -> StaticBody3D:
+	var ramp_body := StaticBody3D.new()
+	ramp_body.name = "SmoothStairRampCollider"
+	ramp_body.collision_layer = 1
+	ramp_body.collision_mask = 0
+	parent.add_child(ramp_body)
+
+	var diff := top_center - bottom_center
+	var ramp_len := diff.length()
+	var mid_pos := (bottom_center + top_center) * 0.5
+
+	var col := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(ramp_width, 0.25, ramp_len + 0.5)
+	col.shape = box
+	ramp_body.add_child(col)
+
+	ramp_body.position = mid_pos - Vector3(0.0, 0.12, 0.0)
+	ramp_body.look_at_from_position(ramp_body.position, top_center, Vector3.UP)
+
+	# Gắn 2 gờ chắn vô hình hai bên sườn cầu thang chống trượt ra ngoài mép
+	var half_w := ramp_width * 0.5
+	for side in [-1.0, 1.0]:
+		var side_col := CollisionShape3D.new()
+		var side_box := BoxShape3D.new()
+		side_box.size = Vector3(0.35, 2.5, ramp_len + 0.5)
+		side_col.shape = side_box
+		side_col.position = Vector3(side * (half_w + 0.15), 1.0, 0.0)
+		ramp_body.add_child(side_col)
+
+	return ramp_body
+
+# ------------------------------------------------------------------------------
+# BỌC KÍN RÌA BẢN ĐỒ BẰNG TƯỜNG THÀNH KAYKIT & KHUNG VA CHẠM BIÊN VÔ HÌNH
+# ------------------------------------------------------------------------------
+func _build_perimeter_walls_and_colliders() -> void:
+	# 1. Tường & Cột đá KayKit hiển thị quanh rìa phía Nam của Tầng 1 (Z = 16.0)
+	for col in range(8):
+		var wx := -14.0 + (col * TILE_SIZE)
+		_spawn_trimesh_piece(KayKitAssetRegistry.WALL_ELEVATION, Vector3(wx, 0.0, 16.0), Vector3(0, 180, 0), walls_container)
+	# Cột đá tại các góc Tầng 1
+	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(-16.0, 0.0, 16.0), Vector3.ZERO, props_container)
+	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(16.0, 0.0, 16.0), Vector3.ZERO, props_container)
+
+	# 2. Tường rìa phía Tây (X = -16.0) và phía Đông (X = 16.0) của Tầng 1
+	for row in range(8):
+		var wz := -14.0 + (row * TILE_SIZE)
+		_spawn_trimesh_piece(KayKitAssetRegistry.WALL_ELEVATION, Vector3(-16.0, 0.0, wz), Vector3(0, 90, 0), walls_container)
+		_spawn_trimesh_piece(KayKitAssetRegistry.WALL_ELEVATION, Vector3(16.0, 0.0, wz), Vector3(0, -90, 0), walls_container)
+
+	# 3. Tường thành vai bắc Tầng 2 (Z = -28.0) ở hai bên ngoài Tầng 3
+	var t2_north_x = [-14.0, -10.0, 10.0, 14.0]
+	for nx in t2_north_x:
+		_spawn_trimesh_piece(KayKitAssetRegistry.WALL_ELEVATION, Vector3(nx, TIER_HEIGHT, -28.0), Vector3(0, 180, 0), walls_container)
+	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(-16.0, TIER_HEIGHT, -28.0), Vector3.ZERO, props_container)
+	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(16.0, TIER_HEIGHT, -28.0), Vector3.ZERO, props_container)
+
+	# 4. KHUNG VA CHẠM VẬT LÝ VÔ HÌNH CHẶN BIÊN TUYỆT ĐỐI (INVISIBLE BOUNDARY COLLIDERS)
+	# Chu vi Tầng 1
+	_create_boundary_box(boundaries_container, "Boundary_South_T1", Vector3(0.0, 8.0, 16.8), Vector3(38.0, 20.0, 2.0))
+	_create_boundary_box(boundaries_container, "Boundary_West_T1", Vector3(-16.8, 8.0, 0.0), Vector3(2.0, 20.0, 36.0))
+	_create_boundary_box(boundaries_container, "Boundary_East_T1", Vector3(16.8, 8.0, 0.0), Vector3(2.0, 20.0, 36.0))
+
+	# Chu vi Tầng 2
+	_create_boundary_box(boundaries_container, "Boundary_West_T2", Vector3(-16.8, 10.0, -22.0), Vector3(2.0, 20.0, 16.0))
+	_create_boundary_box(boundaries_container, "Boundary_East_T2", Vector3(16.8, 10.0, -22.0), Vector3(2.0, 20.0, 16.0))
+	_create_boundary_box(boundaries_container, "Boundary_North_Shoulder_W", Vector3(-12.5, 10.0, -28.8), Vector3(9.0, 20.0, 2.0))
+	_create_boundary_box(boundaries_container, "Boundary_North_Shoulder_E", Vector3(12.5, 10.0, -28.8), Vector3(9.0, 20.0, 2.0))
+
+	# Chu vi Tầng 3
+	_create_boundary_box(boundaries_container, "Boundary_West_T3", Vector3(-8.8, 14.0, -34.0), Vector3(2.0, 20.0, 16.0))
+	_create_boundary_box(boundaries_container, "Boundary_East_T3", Vector3(8.8, 14.0, -34.0), Vector3(2.0, 20.0, 16.0))
+	_create_boundary_box(boundaries_container, "Boundary_North_T3", Vector3(0.0, 14.0, -40.8), Vector3(20.0, 20.0, 2.0))
+
+	# 5. Khung va chạm bảo vệ mép vực giữa các tầng (Chỉ chừa trống lối vào cầu thang)
+	# Mép vực Tầng 2 -> Tầng 1 (Z = -16.0, Y = 4.0): chừa khe X = ±6.0
+	_create_boundary_box(boundaries_container, "Ledge_Guard_T2_West", Vector3(-12.5, 5.0, -16.0), Vector3(7.0, 4.0, 0.8))
+	_create_boundary_box(boundaries_container, "Ledge_Guard_T2_Center", Vector3(0.0, 5.0, -16.0), Vector3(6.5, 4.0, 0.8))
+	_create_boundary_box(boundaries_container, "Ledge_Guard_T2_East", Vector3(12.5, 5.0, -16.0), Vector3(7.0, 4.0, 0.8))
+
+	# Mép vực Tầng 3 -> Tầng 2 (Z = -28.0, Y = 8.0): chừa khe X = 0.0
+	_create_boundary_box(boundaries_container, "Ledge_Guard_T3_West", Vector3(-5.5, 9.0, -28.0), Vector3(5.0, 4.0, 0.8))
+	_create_boundary_box(boundaries_container, "Ledge_Guard_T3_East", Vector3(5.5, 9.0, -28.0), Vector3(5.0, 4.0, 0.8))
+
+static func _create_boundary_box(parent: Node3D, b_name: String, pos: Vector3, size: Vector3) -> StaticBody3D:
+	var sb := StaticBody3D.new()
+	sb.name = b_name
+	sb.collision_layer = 1
+	sb.collision_mask = 0
+	parent.add_child(sb)
+
+	var col := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = size
+	col.shape = box
+	sb.add_child(col)
+	sb.position = pos
+	return sb
+
+# ------------------------------------------------------------------------------
+# LƯU DANH SÁCH TỌA ĐỘ CẦU THANG CHO AI BOT QUÁI
+# ------------------------------------------------------------------------------
+func _setup_stair_links() -> void:
+	var links = [
+		{"bottom": Vector3(-6.0, 0.0, -12.0), "top": Vector3(-6.0, 4.0, -16.0), "tier_bottom": 1, "tier_top": 2},
+		{"bottom": Vector3(6.0, 0.0, -12.0), "top": Vector3(6.0, 4.0, -16.0), "tier_bottom": 1, "tier_top": 2},
+		{"bottom": Vector3(0.0, 4.0, -24.0), "top": Vector3(0.0, 8.0, -28.0), "tier_bottom": 2, "tier_top": 3}
+	]
+	set_meta("stair_links", links)
+
+# ------------------------------------------------------------------------------
 # BỐ TRÍ VẬT CẢN & TRANG TRÍ KAYKIT (0% PRIMITIVE MESH)
 # ------------------------------------------------------------------------------
 func _place_props_and_obstacles() -> void:
-	# 1. Hàng Cột Đá (Pillars) tại các vị trí trang trọng bên cầu thang
-	# Cột dưới chân cầu thang Tầng 1
-	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(-9.8, 0.0, -12.0), Vector3.ZERO, props_container)
-	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(-2.2, 0.0, -12.0), Vector3.ZERO, props_container)
-	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(2.2, 0.0, -12.0), Vector3.ZERO, props_container)
-	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(9.8, 0.0, -12.0), Vector3.ZERO, props_container)
-	
-	# Cột trên đỉnh cầu thang Tầng 2
-	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(-9.8, TIER_HEIGHT, -16.5), Vector3.ZERO, props_container)
-	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(-2.2, TIER_HEIGHT, -16.5), Vector3.ZERO, props_container)
-	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(2.2, TIER_HEIGHT, -16.5), Vector3.ZERO, props_container)
-	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(9.8, TIER_HEIGHT, -16.5), Vector3.ZERO, props_container)
-	
-	# Cột hai bên cầu thang Tầng 3
-	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(-3.8, TIER_HEIGHT, -24.0), Vector3.ZERO, props_container)
-	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(3.8, TIER_HEIGHT, -24.0), Vector3.ZERO, props_container)
-	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(-3.8, TIER_HEIGHT * 2.0, -28.5), Vector3.ZERO, props_container)
-	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(3.8, TIER_HEIGHT * 2.0, -28.5), Vector3.ZERO, props_container)
+	# Cột trang trọng bên ngoài hành lang cầu thang Tầng 1 (đặt cách tâm cầu thang > 3.2m)
+	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(-9.5, 0.0, -12.0), Vector3.ZERO, props_container)
+	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(-2.5, 0.0, -12.0), Vector3.ZERO, props_container)
+	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(2.5, 0.0, -12.0), Vector3.ZERO, props_container)
+	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(9.5, 0.0, -12.0), Vector3.ZERO, props_container)
 
-	# 2. Đuốc lửa (Torches with warm OmniLight3D)
+	# Cột trên đỉnh cầu thang Tầng 2
+	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(-9.5, TIER_HEIGHT, -17.0), Vector3.ZERO, props_container)
+	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(-2.5, TIER_HEIGHT, -17.0), Vector3.ZERO, props_container)
+	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(2.5, TIER_HEIGHT, -17.0), Vector3.ZERO, props_container)
+	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(9.5, TIER_HEIGHT, -17.0), Vector3.ZERO, props_container)
+
+	# Cột hai bên cầu thang Tầng 3
+	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(-3.5, TIER_HEIGHT, -24.0), Vector3.ZERO, props_container)
+	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(3.5, TIER_HEIGHT, -24.0), Vector3.ZERO, props_container)
+	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(-3.5, TIER_HEIGHT * 2.0, -28.5), Vector3.ZERO, props_container)
+	_spawn_convex_piece(KayKitAssetRegistry.PROP_PILLAR, Vector3(3.5, TIER_HEIGHT * 2.0, -28.5), Vector3.ZERO, props_container)
+
+	# Đuốc lửa (Torches with warm OmniLight3D)
 	_spawn_torch_with_light(Vector3(-10.5, 0.0, -12.0), props_container)
 	_spawn_torch_with_light(Vector3(10.5, 0.0, -12.0), props_container)
 	_spawn_torch_with_light(Vector3(-4.5, TIER_HEIGHT, -24.0), props_container)
@@ -170,10 +298,10 @@ func _place_props_and_obstacles() -> void:
 	_spawn_torch_with_light(Vector3(-4.5, TIER_HEIGHT * 2.0, -38.0), props_container)
 	_spawn_torch_with_light(Vector3(4.5, TIER_HEIGHT * 2.0, -38.0), props_container)
 
-	# 3. Rương báu cổ tại đỉnh Tầng 3 (Summit Reward)
+	# Rương báu cổ tại đỉnh Tầng 3
 	_spawn_convex_piece(KayKitAssetRegistry.PROP_CHEST, Vector3(0.0, TIER_HEIGHT * 2.0, -36.0), Vector3(0, 180, 0), props_container)
 
-	# 4. Thùng gỗ (Barrels) theo cụm
+	# Thùng gỗ (Barrels)
 	_spawn_convex_piece(KayKitAssetRegistry.PROP_BARREL, Vector3(-13.5, 0.0, 13.0), Vector3.ZERO, props_container)
 	_spawn_convex_piece(KayKitAssetRegistry.PROP_BARREL, Vector3(-12.2, 0.0, 13.8), Vector3.ZERO, props_container)
 	_spawn_convex_piece(KayKitAssetRegistry.PROP_BARREL, Vector3(13.2, 0.0, 13.2), Vector3.ZERO, props_container)
@@ -181,7 +309,7 @@ func _place_props_and_obstacles() -> void:
 	_spawn_convex_piece(KayKitAssetRegistry.PROP_BARREL, Vector3(-13.5, TIER_HEIGHT, -22.0), Vector3.ZERO, props_container)
 	_spawn_convex_piece(KayKitAssetRegistry.PROP_BARREL, Vector3(13.5, TIER_HEIGHT, -22.0), Vector3.ZERO, props_container)
 
-	# 5. Cây cối (Trees Nature Pack) quanh rìa Tầng 1 và trên Tầng 2
+	# Cây cối
 	_spawn_convex_piece(KayKitAssetRegistry.PROP_TREE_A, Vector3(-14.5, 0.0, 6.0), Vector3(0, 25, 0), props_container, 2.5)
 	_spawn_convex_piece(KayKitAssetRegistry.PROP_TREE_B, Vector3(-14.8, 0.0, -4.0), Vector3(0, -40, 0), props_container, 2.8)
 	_spawn_convex_piece(KayKitAssetRegistry.PROP_TREE_A, Vector3(14.5, 0.0, 6.0), Vector3(0, 60, 0), props_container, 2.5)
@@ -191,27 +319,26 @@ func _place_props_and_obstacles() -> void:
 	_spawn_convex_piece(KayKitAssetRegistry.PROP_TREE_A, Vector3(-14.0, TIER_HEIGHT, -25.5), Vector3(0, 45, 0), props_container, 2.4)
 	_spawn_convex_piece(KayKitAssetRegistry.PROP_TREE_B, Vector3(14.0, TIER_HEIGHT, -25.5), Vector3(0, -30, 0), props_container, 2.4)
 
-	# 6. Tảng đá (Rocks Nature Pack)
+	# Tảng đá
 	_spawn_convex_piece(KayKitAssetRegistry.PROP_ROCK_A, Vector3(-13.0, 0.0, 11.5), Vector3(0, 35, 0), props_container, 3.5)
 	_spawn_convex_piece(KayKitAssetRegistry.PROP_ROCK_B, Vector3(13.0, 0.0, 11.5), Vector3(0, -60, 0), props_container, 3.5)
 	_spawn_convex_piece(KayKitAssetRegistry.PROP_ROCK_A, Vector3(-13.0, TIER_HEIGHT, -18.5), Vector3(0, 120, 0), props_container, 3.0)
 	_spawn_convex_piece(KayKitAssetRegistry.PROP_ROCK_B, Vector3(13.0, TIER_HEIGHT, -18.5), Vector3(0, -45, 0), props_container, 3.0)
 
 # ------------------------------------------------------------------------------
-# HÀM TẠO VA CHẠM VẬT LÝ TRIMESH CHO SÀN, BẬC THANG, VÁCH TẦNG (LAYER 1)
+# HÀM TẠO VA CHẠM VẬT LÝ TRIMESH CHO SÀN, VÁCH TẦNG (LAYER 1)
 # ------------------------------------------------------------------------------
 func _spawn_trimesh_piece(path: String, pos: Vector3, rot_deg: Vector3, parent: Node) -> Node3D:
 	var sc: PackedScene = ResourceLoader.load(path) as PackedScene
 	if sc == null:
 		push_error("Failed to load trimesh piece: " + path)
 		return null
-		
+
 	var inst: Node3D = sc.instantiate() as Node3D
 	inst.position = pos
 	inst.rotation_degrees = rot_deg
 	parent.add_child(inst)
-	
-	# Duyệt đệ quy tạo trimesh collision cho mọi MeshInstance3D
+
 	var mesh_nodes := inst.find_children("*", "MeshInstance3D", true, false)
 	for mn in mesh_nodes:
 		var mi := mn as MeshInstance3D
@@ -222,7 +349,22 @@ func _spawn_trimesh_piece(path: String, pos: Vector3, rot_deg: Vector3, parent: 
 					var sb := c as StaticBody3D
 					sb.collision_layer = 1
 					sb.collision_mask = 0
-					
+
+	return inst
+
+# ------------------------------------------------------------------------------
+# HÀM SPAWN PIECE CHỈ DÀNH CHO HIỂN THỊ (KHÔNG TẠO VA CHẠM TRIMESH RĂNG CƯA)
+# ------------------------------------------------------------------------------
+func _spawn_visual_only_piece(path: String, pos: Vector3, rot_deg: Vector3, parent: Node) -> Node3D:
+	var sc: PackedScene = ResourceLoader.load(path) as PackedScene
+	if sc == null:
+		push_error("Failed to load visual piece: " + path)
+		return null
+
+	var inst: Node3D = sc.instantiate() as Node3D
+	inst.position = pos
+	inst.rotation_degrees = rot_deg
+	parent.add_child(inst)
 	return inst
 
 # ------------------------------------------------------------------------------
@@ -233,14 +375,14 @@ func _spawn_convex_piece(path: String, pos: Vector3, rot_deg: Vector3, parent: N
 	if sc == null:
 		push_error("Failed to load convex piece: " + path)
 		return null
-		
+
 	var inst: Node3D = sc.instantiate() as Node3D
 	inst.position = pos
 	inst.rotation_degrees = rot_deg
 	if scale_factor != 1.0:
 		inst.scale = Vector3.ONE * scale_factor
 	parent.add_child(inst)
-	
+
 	var mesh_nodes := inst.find_children("*", "MeshInstance3D", true, false)
 	for mn in mesh_nodes:
 		var mi := mn as MeshInstance3D
@@ -251,7 +393,7 @@ func _spawn_convex_piece(path: String, pos: Vector3, rot_deg: Vector3, parent: N
 					var sb := c as StaticBody3D
 					sb.collision_layer = 1
 					sb.collision_mask = 0
-					
+
 	return inst
 
 # ------------------------------------------------------------------------------
@@ -271,7 +413,7 @@ func _spawn_torch_with_light(pos: Vector3, parent: Node) -> void:
 		torch_inst.add_child(light)
 
 # ------------------------------------------------------------------------------
-# THIẾT LẬP NAVIGATION MESH (BẮT BUỘC KẾT NỐI LIỀN MẠCH 3 TẦNG & CẦU THANG)
+# THIẾT LẬP NAVIGATION MESH (KẾT NỐI LIỀN MẠCH 3 TẦNG & CẦU THANG)
 # ------------------------------------------------------------------------------
 func _setup_navigation() -> void:
 	var nav_mesh := NavigationMesh.new()
@@ -279,11 +421,11 @@ func _setup_navigation() -> void:
 	nav_mesh.cell_height = 0.25
 	nav_mesh.agent_height = 1.6
 	nav_mesh.agent_radius = 0.5
-	nav_mesh.agent_max_climb = 0.5 # Bậc thang KayKit cao 0.5m mỗi bậc
-	nav_mesh.agent_max_slope = 52.0
+	nav_mesh.agent_max_climb = 0.5
+	nav_mesh.agent_max_slope = 58.0
 	nav_mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
 	nav_mesh.geometry_collision_mask = 1
-	
+
 	nav_region.navigation_mesh = nav_mesh
 	nav_region.bake_navigation_mesh()
 
@@ -298,7 +440,7 @@ func _setup_lighting_and_environment() -> void:
 		sun_light.shadow_enabled = true
 		sun_light.directional_shadow_max_distance = 120.0
 		sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-		
+
 	if world_env and world_env.environment:
 		var env := world_env.environment
 		env.background_mode = Environment.BG_COLOR
@@ -309,7 +451,7 @@ func _setup_lighting_and_environment() -> void:
 		env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 
 # ------------------------------------------------------------------------------
-# SINH 5 LÍNH ĐỐI KHÁNG ĐA TẦNG (PHASE 4)
+# SINH 5 LÍNH ĐỐI KHÁNG ĐA TẦNG (PHASE 4 & 6)
 # ------------------------------------------------------------------------------
 func _spawn_enemies() -> void:
 	var enemies_container := get_node_or_null("Enemies") as Node3D
