@@ -309,26 +309,46 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
-	# --- Dash Override (Task 19.2 & 19.3) ---
+	# --- Dash Override (Task 19.2 & 19.3 & Directive 22 Stair Dash) ---
 	if _dash_timer > 0.0:
 		_dash_timer -= delta
 		var effective_dash_speed := DASH_SPEED
 		var on_stair_slope := false
+		var slope_normal := Vector3.UP
+
 		if is_on_floor() and get_floor_normal().y < 0.96:
 			on_stair_slope = true
+			slope_normal = get_floor_normal()
 		else:
 			for i in range(get_slide_collision_count()):
-				var col_obj := get_slide_collision(i).get_collider()
+				var col := get_slide_collision(i)
+				var col_obj = col.get_collider()
 				if col_obj is Node and (col_obj as Node).is_in_group("stairs"):
-					on_stair_slope = true
-					break
+					var n: Vector3 = col.get_normal()
+					if n.y > 0.3:
+						on_stair_slope = true
+						slope_normal = n
+						break
+
+		if not on_stair_slope:
+			var space_state := get_world_3d().direct_space_state
+			var ray_from := global_position + Vector3(0.0, 0.15, 0.0)
+			var ray_to := ray_from + _dash_dir * 0.65
+			var query := PhysicsRayQueryParameters3D.create(ray_from, ray_to, 1)
+			query.exclude = [get_rid()]
+			var hit := space_state.intersect_ray(query)
+			if not hit.is_empty():
+				var col_obj = hit.get("collider", null)
+				if col_obj is Node and (col_obj as Node).is_in_group("stairs"):
+					var n: Vector3 = hit.get("normal", Vector3.UP)
+					if n.y > 0.3:
+						on_stair_slope = true
+						slope_normal = n
 
 		if on_stair_slope:
-			# Giảm hệ số lướt trên dốc cầu thang để tốc độ 3D cân bằng với mặt phẳng (Task 19.2)
-			effective_dash_speed = DASH_SPEED * 0.72
-			velocity.x = _dash_dir.x * effective_dash_speed
-			velocity.z = _dash_dir.z * effective_dash_speed
-			velocity.y = clampf(velocity.y, -4.0, effective_dash_speed * 0.35)
+			effective_dash_speed = DASH_SPEED * 0.82
+			var slope_fwd := (_dash_dir - slope_normal * _dash_dir.dot(slope_normal)).normalized()
+			velocity = slope_fwd * effective_dash_speed
 		else:
 			velocity.x = _dash_dir.x * effective_dash_speed
 			velocity.z = _dash_dir.z * effective_dash_speed

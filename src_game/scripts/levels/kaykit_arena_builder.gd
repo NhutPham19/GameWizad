@@ -110,9 +110,9 @@ func _build_tier_2_terrace() -> void:
 	if s2:
 		s2.add_to_group("stairs")
 
-	# Gắn Cầu thang kín chống lọt gầm & thành bảo vệ hai bên (LeakproofStairAssembly) cho cả 2 cầu thang
-	create_leakproof_stair_assembly(boundaries_container, Vector3(-6.0, 0.0, -12.0), Vector3(-6.0, 4.0, -16.0), 5.0)
-	create_leakproof_stair_assembly(boundaries_container, Vector3(6.0, 0.0, -12.0), Vector3(6.0, 4.0, -16.0), 5.0)
+	# Gắn Cầu thang kín chống lọt gầm & thành bảo vệ hai bên (LeakproofStairAssembly) cho cả 2 cầu thang (rộng 4.6m)
+	create_leakproof_stair_assembly(boundaries_container, Vector3(-6.0, 0.0, -12.0), Vector3(-6.0, 4.0, -16.0), 4.6)
+	create_leakproof_stair_assembly(boundaries_container, Vector3(6.0, 0.0, -12.0), Vector3(6.0, 4.0, -16.0), 4.6)
 
 	# 3. Vách đá chắn sườn đồi dọc theo Z = -16.0:
 	# TUYỆT ĐỐI CHỪA THÔNG ĐỘ RỘNG 4.5m+ quanh X = -6.0 và X = +6.0
@@ -143,7 +143,7 @@ func _build_tier_3_citadel() -> void:
 	var s3 := _spawn_visual_only_piece(KayKitAssetRegistry.STAIRS_WIDE, Vector3(0.0, TIER_HEIGHT, -28.0), Vector3.ZERO, stairs_container)
 	if s3:
 		s3.add_to_group("stairs")
-	create_leakproof_stair_assembly(boundaries_container, Vector3(0.0, 4.0, -24.0), Vector3(0.0, 8.0, -28.0), 5.0)
+	create_leakproof_stair_assembly(boundaries_container, Vector3(0.0, 4.0, -24.0), Vector3(0.0, 8.0, -28.0), 4.6)
 
 	# 3. Vách đá bao quanh chân Tầng 3 (độ cao Y = 4.0m)
 	# Vách phía Nam (Z = -28.0, chừa cầu thang thông thoáng ở X = 0)
@@ -164,74 +164,70 @@ func _build_tier_3_citadel() -> void:
 # ------------------------------------------------------------------------------
 # HÀM TẠO CẦU THANG KÍN CHỐNG LỌT GẦM & THÀNH BẢO VỆ HAI BÊN (WATERTIGHT STAIR ASSEMBLY - TASK 21.4)
 # ------------------------------------------------------------------------------
-static func create_leakproof_stair_assembly(parent: Node3D, bottom_center: Vector3, top_center: Vector3, ramp_width: float = 5.0) -> StaticBody3D:
-	var ramp_body := StaticBody3D.new()
-	ramp_body.name = "SmoothStairRampCollider"
-	ramp_body.collision_layer = 1
-	ramp_body.collision_mask = 0
-	ramp_body.add_to_group("stairs")
-	parent.add_child(ramp_body)
+static func create_leakproof_stair_assembly(parent: Node3D, bottom_center: Vector3, top_center: Vector3, ramp_width: float = 4.6) -> StaticBody3D:
+	# 1. Node StaticBody3D gốc giữ nguyên hệ trục Thế giới (rotation = Vector3.ZERO)
+	var stair_body := StaticBody3D.new()
+	stair_body.name = "SmoothStairRampCollider"
+	stair_body.collision_layer = 1
+	stair_body.collision_mask = 0
+	stair_body.add_to_group("stairs")
+	parent.add_child(stair_body)
+	stair_body.global_position = Vector3.ZERO
 
-	var diff := top_center - bottom_center
-	var ramp_len := diff.length()
+	# Mở rộng điểm bắt đầu chân dốc ra phía trước 0.45m và hạ nhẹ -0.08m để tiếp tuyến êm 100% với mặt sàn dưới (0mm gờ cản khi Dash lên!)
+	var forward_flat_dir := Vector3(top_center.x - bottom_center.x, 0.0, top_center.z - bottom_center.z).normalized()
+	var smooth_bottom := bottom_center - forward_flat_dir * 0.45 - Vector3(0.0, 0.08, 0.0)
+	var smooth_top := top_center + forward_flat_dir * 0.15 - Vector3(0.0, 0.05, 0.0)
+
+	var ramp_diff := smooth_top - smooth_bottom
+	var ramp_len := ramp_diff.length()
+	var ramp_mid := (smooth_bottom + smooth_top) * 0.5
 	var rise_height := top_center.y - bottom_center.y
-	var mid_pos := (bottom_center + top_center) * 0.5
 	var half_w := ramp_width * 0.5
-	var half_len := ramp_len * 0.5
 
-	# 1. Mặt dốc chính mở rộng nối sàn dưới lên mép sàn trên, vát sâu ăn vào sàn 0.25m
-	var col := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(ramp_width, 0.28, ramp_len + 0.6)
-	col.shape = box
-	ramp_body.add_child(col)
+	# 2. Mặt dốc phẳng nghiêng liên tục (chỉ xoay riêng CollisionShape3D của mặt dốc)
+	var ramp_col := CollisionShape3D.new()
+	ramp_col.name = "RampSurfaceShape"
+	var ramp_box := BoxShape3D.new()
+	ramp_box.size = Vector3(ramp_width, 0.20, ramp_len)
+	ramp_col.shape = ramp_box
+	stair_body.add_child(ramp_col)
+	ramp_col.global_position = ramp_mid - Vector3(0.0, 0.10, 0.0)
+	ramp_col.look_at_from_position(ramp_col.global_position, smooth_top - Vector3(0.0, 0.10, 0.0), Vector3.UP)
 
-	ramp_body.position = mid_pos - Vector3(0.0, 0.12, 0.0)
-	ramp_body.look_at_from_position(ramp_body.position, top_center, Vector3.UP)
-
-	# 2. Hai vách thành lan can vô hình ôm sát sườn thang (dày 0.35m, cao 2.4m)
+	# 3. Hai vách chắn hông cầu thang thẳng đứng chuẩn hệ trục Thế giới (World-Aligned, không nhô ra ngoài làm hẹp lối đi)
+	var center_xz := (bottom_center + top_center) * 0.5
+	var horiz_len := Vector2(top_center.x - bottom_center.x, top_center.z - bottom_center.z).length()
 	for side in [-1.0, 1.0]:
 		var side_col := CollisionShape3D.new()
 		var side_box := BoxShape3D.new()
-		side_box.size = Vector3(0.35, rise_height + 2.4, ramp_len + 0.6)
+		side_box.size = Vector3(0.24, rise_height + 2.2, horiz_len + 0.2)
 		side_col.shape = side_box
-		side_col.position = Vector3(side * (half_w + 0.175), (rise_height + 2.4) * 0.35, 0.0)
-		ramp_body.add_child(side_col)
+		side_col.position = Vector3(
+			center_xz.x + side * (half_w + 0.12),
+			bottom_center.y + (rise_height + 2.2) * 0.5,
+			center_xz.z
+		)
+		stair_body.add_child(side_col)
 
-	# 3. Khối nêm đặc lấp kín hoàn toàn bên dưới gầm cầu thang nối khít vào tường tầng trên
+	# 4. Khối đặc chặn gầm phía sau cầu thang (World-Aligned, nằm hoàn toàn ở nửa sau cầu thang, tuyệt đối không trồi lên ở chân thang)
 	var under_col := CollisionShape3D.new()
 	var under_box := BoxShape3D.new()
-	under_box.size = Vector3(ramp_width, rise_height + 0.4, ramp_len * 0.95)
+	under_box.size = Vector3(ramp_width + 0.4, rise_height * 0.55, horiz_len * 0.48)
 	under_col.shape = under_box
-	under_col.position = Vector3(0.0, -rise_height * 0.45, -ramp_len * 0.05)
-	ramp_body.add_child(under_col)
+	under_col.position = Vector3(
+		top_center.x,
+		bottom_center.y + (rise_height * 0.55) * 0.5,
+		lerpf(bottom_center.z, top_center.z, 0.76)
+	)
+	stair_body.add_child(under_col)
 
-	# 4. Gắn 2 cánh phễu vát góc 35 độ ở chân cầu thang (Bottom Funnel Bevels)
-	for side in [-1.0, 1.0]:
-		var bevel_col := CollisionShape3D.new()
-		var bevel_box := BoxShape3D.new()
-		bevel_box.size = Vector3(0.35, 2.4, 1.2)
-		bevel_col.shape = bevel_box
-		bevel_col.position = Vector3(side * (half_w + 0.35), 0.8, half_len)
-		bevel_col.rotation.y = deg_to_rad(35.0 * side)
-		ramp_body.add_child(bevel_col)
+	return stair_body
 
-	# 5. Gắn 2 cánh phễu vát góc 35 độ ở đỉnh cầu thang giao tường (Top Funnel Bevels)
-	for side in [-1.0, 1.0]:
-		var bevel_top_col := CollisionShape3D.new()
-		var bevel_top_box := BoxShape3D.new()
-		bevel_top_box.size = Vector3(0.35, 2.4, 1.2)
-		bevel_top_col.shape = bevel_top_box
-		bevel_top_col.position = Vector3(side * (half_w + 0.35), rise_height * 0.7, -half_len)
-		bevel_top_col.rotation.y = deg_to_rad(-35.0 * side)
-		ramp_body.add_child(bevel_top_col)
-
-	return ramp_body
-
-static func build_watertight_stair_assembly(parent: Node3D, bottom_center: Vector3, top_center: Vector3, ramp_width: float = 5.0) -> StaticBody3D:
+static func build_watertight_stair_assembly(parent: Node3D, bottom_center: Vector3, top_center: Vector3, ramp_width: float = 4.6) -> StaticBody3D:
 	return create_leakproof_stair_assembly(parent, bottom_center, top_center, ramp_width)
 
-static func create_smooth_stair_ramp(parent: Node3D, bottom_center: Vector3, top_center: Vector3, ramp_width: float = 5.0) -> StaticBody3D:
+static func create_smooth_stair_ramp(parent: Node3D, bottom_center: Vector3, top_center: Vector3, ramp_width: float = 4.6) -> StaticBody3D:
 	return create_leakproof_stair_assembly(parent, bottom_center, top_center, ramp_width)
 
 # ------------------------------------------------------------------------------

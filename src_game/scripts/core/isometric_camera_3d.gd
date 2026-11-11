@@ -26,15 +26,14 @@ func _process(delta: float) -> void:
 	if shake_intensity > 0.0:
 		shake_intensity = max(0.0, shake_intensity - (shake_decay * delta))
 
-func _physics_process(delta: float) -> void:
 	if not is_instance_valid(target_node):
 		var p = get_tree().get_first_node_in_group("player") as Node3D
 		if p and is_instance_valid(p) and p.visible:
 			target_node = p
-					
+
 	if not is_instance_valid(target_node):
 		return
-		
+
 	# Isometric offset locked to target center with pitch -48°, yaw 45°
 	var rad_pitch := deg_to_rad(48.0)
 	var rad_yaw := deg_to_rad(45.0)
@@ -44,7 +43,7 @@ func _physics_process(delta: float) -> void:
 	var offset_z := cos(rad_yaw) * horiz
 	var isometric_offset := Vector3(offset_x, offset_y, offset_z)
 	var desired_pos: Vector3 = target_node.global_position + isometric_offset
-	
+
 	if shake_intensity > 0.0:
 		var shake_offset := Vector3(
 			randf_range(-shake_intensity, shake_intensity),
@@ -52,8 +51,12 @@ func _physics_process(delta: float) -> void:
 			randf_range(-shake_intensity, shake_intensity)
 		)
 		desired_pos += shake_offset
-		
-	global_position = global_position.lerp(desired_pos, follow_speed * delta)
+
+	# Tối ưu độ mượt tần số quét cao 144Hz–240Hz: Frame-rate independent exponential smoothing
+	var weight := 1.0 - exp(-follow_speed * delta)
+	global_position = global_position.lerp(desired_pos, weight)
+
+func _physics_process(_delta: float) -> void:
 	_update_occlusion_fade()
 
 func _update_occlusion_fade() -> void:

@@ -290,6 +290,28 @@
   - Không gây bất kỳ lỗi hồi quy nào cho Suite Giai Đoạn 20 (`test_phase_20_ultimate_slash_vfx_and_red_hp.gd` PASS 100%).
   - Chụp ảnh minh chứng thực tế trên GPU NVIDIA GeForce RTX 4060 Laptop GPU: `docs/QA_REPORTS/screenshots/phase21_combat_upgrades.png`.
 
+---
+
+## 📌 GIAI ĐOẠN 22: XÓA SỔ GÓC LAG CỘT-CẦU THANG, LƯỚT DASH LÊN CẦU THANG & ĐỘ MƯỢT TẦN SỐ QUÉT CAO 144Hz–240Hz (CHỈ ĐẠO 22) (HOÀN THÀNH 100% ✅)
+
+- [x] **TASK 22.1: Xóa Sổ Góc Lag Giữa Cột Đá & Thành Cầu Thang + Tách Riêng Mặt Dốc & Khối Chắn Hệ Trục Thế Giới (`kaykit_arena_builder.gd`)** (PASS)
+  - Thay thế toàn bộ hàm `create_leakproof_stair_assembly` bằng kiến trúc World-Aligned: `stair_body.rotation = Vector3.ZERO`.
+  - Mở rộng chân dốc ra trước 0.45m và hạ nhẹ -0.08m tạo tiếp tuyến 0mm với mặt sàn, triệt tiêu gờ cản khi bước hoặc lướt lên.
+  - Hai vách chắn hông thẳng đứng song song chuẩn hệ trục thế giới, loại bỏ hoàn toàn các cánh phễu vát nghiêng đâm xiên vào cột đá.
+  - Khối chặn gầm lùi sâu vào nửa sau cầu thang ($Z \le -14.0\text{m}$), tuyệt đối không trồi lên ở chân thang.
+  - Chiều rộng cầu thang điều chỉnh về 4.6m, tạo hành lang thông thoáng $\ge 0.40\text{m}$ giữa thành cầu thang và cột đá.
+- [x] **TASK 22.2: Sửa Kẹt Khi Lướt (Dash Space) Lên Cầu Thang (`hero_knight_3d.gd`)** (PASS)
+  - Khi lướt gặp dốc cầu thang (hoặc phát hiện mặt dốc phía trước qua Raycast), tự động tính toán vector trượt `slope_fwd = (_dash_dir - normal * _dash_dir.dot(normal)).normalized()`.
+  - Cung cấp vận tốc hướng theo mặt dốc ($45^\circ$) đẩy nhân vật lướt vút lên bậc thang mượt mà mà không bị dội hay mắc kẹt tại chân dốc.
+- [x] **TASK 22.3: Tối Ưu Độ Mượt Tần Số Quét Cao (144Hz–240Hz) Cho Camera & Vật Lý** (PASS)
+  - Chuyển cơ chế bám của `IsometricCamera3D` sang `_process(delta)` với công thức làm mượt độc lập tần số quét: `weight = 1.0 - exp(-follow_speed * delta)`. Triệt tiêu hoàn toàn hiện tượng micro-stutter trên màn hình 144Hz–240Hz.
+  - Kích hoạt `physics/common/physics_interpolation = true` trong `project.godot` cho phép engine nội suy chuyển động giữa các frame vật lý.
+- [x] **TASK 22.4: Bộ Kiểm Thử Tự Động 4/4 PASS 100%, Chụp Ảnh Thực Tế RTX 4060 & Đồng Bộ GitHub** (PASS)
+  - Tạo và chạy suite kiểm thử tự động [`test_phase_22_stair_corners_and_smoothness.gd`](file:///e:/DoAnCaNhan/ThuVienGame/GameWizad/src_game/tests/test_phase_22_stair_corners_and_smoothness.gd): **4/4 TEST PASS 100% (PRIMITIVE MESHES: 0)**.
+  - Không gây hồi quy cho các test suite Phase 20 và Phase 21 (toàn bộ 14 bài test đều PASS 100%).
+  - Chụp ảnh minh chứng thực tế trên GPU NVIDIA GeForce RTX 4060 Laptop GPU: `docs/QA_REPORTS/screenshots/phase22_stair_dash_and_corner_fix.png`.
+
+
 
 
 

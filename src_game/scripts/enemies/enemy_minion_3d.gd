@@ -671,6 +671,13 @@ func _apply_wall_micro_separation(_delta: float) -> void:
 					var push_vec := Vector3(normal.x, 0.0, normal.z).normalized() * (min_safe_dist - hit_dist)
 					global_position += push_vec * 0.65
 
+func apply_hit_stun(duration: float) -> void:
+	_hit_stun_timer = maxf(_hit_stun_timer, duration)
+	_action_lock_timer = maxf(_action_lock_timer, duration)
+	_is_attacking = false
+	_set_axe_trails(false)
+	_play_anim_safe("Hit_A")
+
 func take_damage(amount: float, knockback_dir: Vector3 = Vector3.ZERO) -> void:
 	if is_dead:
 		return

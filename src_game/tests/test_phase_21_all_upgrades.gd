@@ -181,9 +181,9 @@ func _init() -> void:
 		5.0
 	)
 	var shapes := stair_assembly.find_children("*", "CollisionShape3D", true, false)
-	print("  - Watertight stair collider shapes count: %d (Expected: >= 7: ramp + 2 cheeks + under block + 4 bevels)" % shapes.size())
-	if shapes.size() >= 7:
-		print("  PASS: Watertight stair monolith includes main ramp, side cheeks, under block, and corner funnel bevels")
+	print("  - Watertight stair collider shapes count: %d (Expected: >= 4: ramp + 2 cheeks + under block)" % shapes.size())
+	if shapes.size() >= 4:
+		print("  PASS: Watertight stair monolith includes main ramp, side cheeks, and under block")
 	else:
 		printerr("  FAIL: Missing watertight stair collider components (found %d)" % shapes.size())
 		all_pass = false
