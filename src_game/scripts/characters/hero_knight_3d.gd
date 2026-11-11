@@ -359,6 +359,7 @@ func _physics_process(delta: float) -> void:
 			visual_root.rotation.y = _facing_angle
 		_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 		move_and_slide()
+		floor_snap_length = 0.60
 		if _rmb_cleave_timer <= 0.0 and not _rmb_wave_spawned:
 			_rmb_wave_spawned = true
 			_trigger_rmb_phase_two(_rmb_cleave_dir)
@@ -415,6 +416,7 @@ func _physics_process(delta: float) -> void:
 
 		move_and_slide()
 		floor_block_on_wall = true
+		floor_snap_length = 0.60
 		_check_dash_impact_against_enemies()
 		return
 
@@ -453,6 +455,7 @@ func _physics_process(delta: float) -> void:
 				velocity.z = 0.0
 			_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 			move_and_slide()
+			floor_snap_length = 0.60
 			_apply_wall_micro_separation(delta)
 			return
 
@@ -479,6 +482,7 @@ func _physics_process(delta: float) -> void:
 				velocity.z = 0.0
 			_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 			move_and_slide()
+			floor_snap_length = 0.60
 			_apply_wall_micro_separation(delta)
 			return
 
@@ -494,6 +498,7 @@ func _physics_process(delta: float) -> void:
 				visual_root.rotation.y = atan2(_lunge_dir.x, _lunge_dir.z)
 		_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 		move_and_slide()
+		floor_snap_length = 0.60
 		_apply_wall_micro_separation(delta)
 		return
 	elif _action_lock_timer > 0.0:
@@ -501,6 +506,7 @@ func _physics_process(delta: float) -> void:
 		velocity.x = 0.0
 		velocity.z = 0.0
 		move_and_slide()
+		floor_snap_length = 0.60
 		_apply_wall_micro_separation(delta)
 		return
 
@@ -593,6 +599,7 @@ func _physics_process(delta: float) -> void:
 	# Tự động bước lên bậc thang mượt mà
 	_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 	move_and_slide()
+	floor_snap_length = 0.60
 
 	# --- Corner Crowd Shove (Task 19.3 Lớp 3: Chen vai đẩy mềm lính khi đi bộ) ---
 	if input_dir.length_squared() > 0.01:
@@ -619,18 +626,18 @@ func _is_in_stair_walk_corridor(pos: Vector3, move_dir: Vector3) -> bool:
 	if horiz.length_squared() < 0.001:
 		return false
 	# Chỉ kích hoạt khi hướng di chuyển có thành phần đi lên/xuống dọc theo trục Z của cầu thang
-	if absf(horiz.normalized().y) < 0.30:
+	if absf(horiz.normalized().y) < 0.25:
 		return false
 
-	# Tọa độ X của nhân vật phải nằm lọt trong lòng rãnh giữa cầu thang (center_x ± 1.18m):
-	# 1. Cầu thang Tây (Tầng 1 <-> 2): center_x = -6.0, Z từ -17.0 đến -11.0
-	if absf(pos.x - (-6.0)) <= 1.18 and pos.z >= -17.0 and pos.z <= -11.0:
+	# Tọa độ X của nhân vật phải nằm lọt trong lòng rãnh giữa cầu thang (center_x ± 1.40m):
+	# 1. Cầu thang Tây (Tầng 1 <-> 2): center_x = -6.0, Z từ -17.5 đến -9.5
+	if absf(pos.x - (-6.0)) <= 1.40 and pos.z >= -17.5 and pos.z <= -9.5:
 		return true
-	# 2. Cầu thang Đông (Tầng 1 <-> 2): center_x = +6.0, Z từ -17.0 đến -11.0
-	if absf(pos.x - 6.0) <= 1.18 and pos.z >= -17.0 and pos.z <= -11.0:
+	# 2. Cầu thang Đông (Tầng 1 <-> 2): center_x = +6.0, Z từ -17.5 đến -9.5
+	if absf(pos.x - 6.0) <= 1.40 and pos.z >= -17.5 and pos.z <= -9.5:
 		return true
-	# 3. Cầu thang Giữa (Tầng 2 <-> 3): center_x = 0.0, Z từ -29.0 đến -23.0
-	if absf(pos.x - 0.0) <= 1.18 and pos.z >= -29.0 and pos.z <= -23.0:
+	# 3. Cầu thang Giữa (Tầng 2 <-> 3): center_x = 0.0, Z từ -29.5 đến -21.5
+	if absf(pos.x - 0.0) <= 1.40 and pos.z >= -29.5 and pos.z <= -21.5:
 		return true
 
 	return false
@@ -638,8 +645,8 @@ func _is_in_stair_walk_corridor(pos: Vector3, move_dir: Vector3) -> bool:
 
 # ==============================================================================
 # HÀM BƯỚC LÊN BẬC THANG TỰ ĐỘNG (_apply_stair_step_up)
-# Giới hạn chỉ kích hoạt khi vật cản phía trước thuộc group "stairs"
-# Khóa hoàn toàn khi đang Dash (Task 19.2)
+# Giới hạn chỉ kích hoạt khi vật cản phía trước thuộc group "stairs" hoặc mép gạch sàn
+# Khóa hoàn toàn khi đang Dash thông thường (Task 19.2)
 # ==============================================================================
 func _apply_stair_step_up(move_dir: Vector3, delta: float, is_dashing: bool = false) -> void:
 	if not _is_in_stair_walk_corridor(global_position, move_dir):
@@ -651,19 +658,24 @@ func _apply_stair_step_up(move_dir: Vector3, delta: float, is_dashing: bool = fa
 	var space_state := get_world_3d().direct_space_state
 	var horiz_dir := Vector3(move_dir.x, 0.0, move_dir.z).normalized()
 
-	# Tia 1: Quét ngang ở độ cao cổ chân (0.15m) đến đầu gối xem có gặp bậc thang không
+	# Tia 1: Quét ngang ở độ cao cổ chân (0.15m) đến đầu gối xem có gặp bậc thang hoặc sàn đón không
 	var foot_from := global_position + Vector3(0.0, 0.15, 0.0)
-	var foot_to := foot_from + horiz_dir * 0.70
+	var foot_to := foot_from + horiz_dir * 0.75
 	var foot_query := PhysicsRayQueryParameters3D.create(foot_from, foot_to, 1)
 	foot_query.exclude = [get_rid()]
 	var foot_hit := space_state.intersect_ray(foot_query)
 
 	if not foot_hit.is_empty():
 		var col_obj = foot_hit.get("collider", null)
-		if col_obj == null or not col_obj.is_in_group("stairs"):
+		var is_valid_surface := false
+		if col_obj != null and col_obj is Node:
+			var node_col := col_obj as Node
+			if node_col.is_in_group("stairs") or node_col.name.to_lower().contains("floor") or node_col.name.to_lower().contains("tile"):
+				is_valid_surface = true
+		if not is_valid_surface:
 			return
 
-		# Tia 2: Bắn từ phía trước ở độ cao 0.85m thẳng xuống để tìm mặt trên của bậc thang
+		# Tia 2: Bắn từ phía trước ở độ cao 0.85m thẳng xuống để tìm mặt trên của bậc thang/sàn
 		var step_from := global_position + horiz_dir * 0.60 + Vector3(0.0, 0.85, 0.0)
 		var step_to := global_position + horiz_dir * 0.60 + Vector3(0.0, 0.02, 0.0)
 		var down_query := PhysicsRayQueryParameters3D.create(step_from, step_to, 1)
@@ -672,14 +684,20 @@ func _apply_stair_step_up(move_dir: Vector3, delta: float, is_dashing: bool = fa
 
 		if not down_hit.is_empty():
 			var down_obj = down_hit.get("collider", null)
-			if down_obj != null and not down_obj.is_in_group("stairs"):
+			var is_down_valid := false
+			if down_obj != null and down_obj is Node:
+				var node_down := down_obj as Node
+				if node_down.is_in_group("stairs") or node_down.name.to_lower().contains("floor") or node_down.name.to_lower().contains("tile"):
+					is_down_valid = true
+			if not is_down_valid:
 				return
 			var target_y: float = down_hit["position"].y
 			var step_h: float = target_y - global_position.y
 			var normal: Vector3 = down_hit["normal"]
 			if step_h > 0.02 and step_h <= 0.65 and normal.y >= 0.55:
-				global_position.y = move_toward(global_position.y, target_y + 0.02, 12.0 * delta)
-				velocity.y = maxf(velocity.y, 0.0)
+				global_position.y = move_toward(global_position.y, target_y + 0.02, 14.0 * delta)
+				velocity.y = maxf(velocity.y, 4.5)
+				floor_snap_length = 0.0
 
 ## Cảm biến dốc cầu thang phía trước khi Dash (Task 23.2 & 24.2)
 func _detect_stair_slope_ahead(dir: Vector3) -> Dictionary:

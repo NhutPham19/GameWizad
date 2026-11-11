@@ -258,17 +258,7 @@ static func create_bulletproof_stair_assembly(
 	right_col.position = Vector3((right_inner_x + outer_max_x) * 0.5, min_y + wall_height * 0.5, side_z_mid)
 	shell_body.add_child(right_col)
 
-	# 1C. Khối Đặc Lấp Kín Toàn Bộ Gầm Cầu Thang (UnderStairSolidCore)
-	var under_col := CollisionShape3D.new()
-	under_col.name = "UnderStairSolidCore"
-	var under_box := BoxShape3D.new()
-	var under_depth := (max_z - min_z) * 0.75
-	under_box.size = Vector3(outer_max_x - outer_min_x, rise_height, under_depth)
-	under_col.shape = under_box
-	under_col.position = Vector3(center_x, min_y + rise_height * 0.5, min_z + under_depth * 0.5 - 0.25)
-	shell_body.add_child(under_col)
-
-	# 1D. Hai Khối Nêm Vát Phẳng Góc Chữ L Nơi Sườn Cầu Thang Giao Với Bức Tường Đá (Corner Glide Wedges)
+	# 1C. Hai Khối Nêm Vát Phẳng Góc Chữ L Nơi Sườn Cầu Thang Giao Với Bức Tường Đá (Corner Glide Wedges)
 	# Xóa sổ hoàn toàn hốc vuông 90 độ sát tường để nhân vật chạy ép vào góc sẽ tự trượt êm ra ngoài!
 	for side in [-1.0, 1.0]:
 		var wedge_col := CollisionShape3D.new()
@@ -296,8 +286,8 @@ static func create_bulletproof_stair_assembly(
 	ramp_body.rotation = Vector3.ZERO
 
 	var walkable_width := (walk_half_w * 2.0) - 0.06 # Rộng 2.24m nằm lọt lòng giữa 2 thành hông 2.30m
-	var smooth_bot := Vector3(center_x, min_y - 0.06, max_z + 0.18) # Ngắn hơn đầu thành hông (max_z + 0.25) nên 0% thò góc nghiêng!
-	var smooth_top := Vector3(center_x, max_y - 0.02, min_z - 0.08)
+	var smooth_bot := Vector3(center_x, min_y - 0.08, max_z + 0.20) # Chìm nhẹ -0.08m dưới sàn chân dốc
+	var smooth_top := Vector3(center_x, max_y + 0.06, min_z - 0.40) # Vươn lên sàn tầng trên +0.06m loại bỏ gờ cản
 	var slope_len := smooth_top.distance_to(smooth_bot)
 	var slope_mid := (smooth_bot + smooth_top) * 0.5
 
@@ -379,12 +369,12 @@ func _build_perimeter_walls_and_colliders() -> void:
 
 func _build_solid_tier_cores() -> void:
 	# Lõi đặc 100% bên dưới sàn Tầng 2: Y từ 0.0 -> 4.0m (Cao 4m, tâm Y = 2.0m)
-	# Mở rộng mặt trước vươn ra tới Z = -15.3 (Task 23.3)
-	_create_boundary_box(boundaries_container, "Solid_Core_Tier2", Vector3(0.0, 2.0, -21.8), Vector3(33.2, 4.0, 13.0))
+	# Nằm gọn dưới sàn Tầng 2 (Z in [-28.0, -16.0]), lùi mặt trước về Z = -16.4m để không chặn cầu thang
+	_create_boundary_box(boundaries_container, "Solid_Core_Tier2", Vector3(0.0, 2.0, -22.4), Vector3(33.2, 4.0, 12.0))
 
 	# Lõi đặc 100% bên dưới sàn Tầng 3: Y từ 0.0 -> 8.0m (Cao 8m, tâm Y = 4.0m)
-	# Mở rộng mặt trước vươn ra tới Z = -27.3 (Task 23.3)
-	_create_boundary_box(boundaries_container, "Solid_Core_Tier3", Vector3(0.0, 4.0, -33.8), Vector3(17.2, 8.0, 13.0))
+	# Nằm gọn dưới sàn Tầng 3 (Z in [-40.0, -28.0]), lùi mặt trước về Z = -28.4m để không chặn cầu thang
+	_create_boundary_box(boundaries_container, "Solid_Core_Tier3", Vector3(0.0, 4.0, -34.4), Vector3(17.2, 8.0, 12.0))
 
 static func _create_boundary_box(parent: Node3D, b_name: String, pos: Vector3, size: Vector3) -> StaticBody3D:
 	var sb := StaticBody3D.new()

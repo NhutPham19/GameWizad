@@ -303,6 +303,7 @@ func _physics_process(delta: float) -> void:
 		velocity.z = _knockback_vel.z
 		_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 		move_and_slide()
+		floor_snap_length = 0.60
 		return
 
 	var player := get_tree().get_first_node_in_group("player") as Node3D
@@ -379,6 +380,7 @@ func _physics_process(delta: float) -> void:
 
 	_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 	move_and_slide()
+	floor_snap_length = 0.60
 	_apply_wall_micro_separation(delta)
 
 
@@ -521,18 +523,18 @@ func _is_in_stair_walk_corridor(pos: Vector3, move_dir: Vector3) -> bool:
 	if horiz.length_squared() < 0.001:
 		return false
 	# Chỉ kích hoạt khi hướng di chuyển có thành phần đi lên/xuống dọc theo trục Z của cầu thang
-	if absf(horiz.normalized().y) < 0.30:
+	if absf(horiz.normalized().y) < 0.25:
 		return false
 
-	# Tọa độ X của nhân vật phải nằm lọt trong lòng rãnh giữa cầu thang (center_x ± 1.18m):
-	# 1. Cầu thang Tây (Tầng 1 <-> 2): center_x = -6.0, Z từ -17.0 đến -11.0
-	if absf(pos.x - (-6.0)) <= 1.18 and pos.z >= -17.0 and pos.z <= -11.0:
+	# Tọa độ X của nhân vật phải nằm lọt trong lòng rãnh giữa cầu thang (center_x ± 1.40m):
+	# 1. Cầu thang Tây (Tầng 1 <-> 2): center_x = -6.0, Z từ -17.5 đến -9.5
+	if absf(pos.x - (-6.0)) <= 1.40 and pos.z >= -17.5 and pos.z <= -9.5:
 		return true
-	# 2. Cầu thang Đông (Tầng 1 <-> 2): center_x = +6.0, Z từ -17.0 đến -11.0
-	if absf(pos.x - 6.0) <= 1.18 and pos.z >= -17.0 and pos.z <= -11.0:
+	# 2. Cầu thang Đông (Tầng 1 <-> 2): center_x = +6.0, Z từ -17.5 đến -9.5
+	if absf(pos.x - 6.0) <= 1.40 and pos.z >= -17.5 and pos.z <= -9.5:
 		return true
-	# 3. Cầu thang Giữa (Tầng 2 <-> 3): center_x = 0.0, Z từ -29.0 đến -23.0
-	if absf(pos.x - 0.0) <= 1.18 and pos.z >= -29.0 and pos.z <= -23.0:
+	# 3. Cầu thang Giữa (Tầng 2 <-> 3): center_x = 0.0, Z từ -29.5 đến -21.5
+	if absf(pos.x - 0.0) <= 1.40 and pos.z >= -29.5 and pos.z <= -21.5:
 		return true
 
 	return false
@@ -540,7 +542,7 @@ func _is_in_stair_walk_corridor(pos: Vector3, move_dir: Vector3) -> bool:
 
 # ==============================================================================
 # HÀM BƯỚC LÊN BẬC THANG TỰ ĐỘNG (_apply_stair_step_up)
-# Giới hạn chỉ kích hoạt khi vật cản phía trước thuộc group "stairs"
+# Giới hạn chỉ kích hoạt khi vật cản phía trước thuộc group "stairs" hoặc sàn đón
 # ==============================================================================
 func _apply_stair_step_up(move_dir: Vector3, delta: float) -> void:
 	if not _is_in_stair_walk_corridor(global_position, move_dir):
@@ -551,14 +553,19 @@ func _apply_stair_step_up(move_dir: Vector3, delta: float) -> void:
 	var horiz_dir := Vector3(move_dir.x, 0.0, move_dir.z).normalized()
 
 	var foot_from := global_position + Vector3(0.0, 0.15, 0.0)
-	var foot_to := foot_from + horiz_dir * 0.70
+	var foot_to := foot_from + horiz_dir * 0.75
 	var foot_query := PhysicsRayQueryParameters3D.create(foot_from, foot_to, 1)
 	foot_query.exclude = [get_rid()]
 	var foot_hit := space_state.intersect_ray(foot_query)
 
 	if not foot_hit.is_empty():
 		var col_obj = foot_hit.get("collider", null)
-		if col_obj == null or not col_obj.is_in_group("stairs"):
+		var is_valid_surface := false
+		if col_obj != null and col_obj is Node:
+			var node_col := col_obj as Node
+			if node_col.is_in_group("stairs") or node_col.name.to_lower().contains("floor") or node_col.name.to_lower().contains("tile"):
+				is_valid_surface = true
+		if not is_valid_surface:
 			return
 
 		var step_from := global_position + horiz_dir * 0.60 + Vector3(0.0, 0.85, 0.0)
@@ -569,14 +576,20 @@ func _apply_stair_step_up(move_dir: Vector3, delta: float) -> void:
 
 		if not down_hit.is_empty():
 			var down_obj = down_hit.get("collider", null)
-			if down_obj != null and not down_obj.is_in_group("stairs"):
+			var is_down_valid := false
+			if down_obj != null and down_obj is Node:
+				var node_down := down_obj as Node
+				if node_down.is_in_group("stairs") or node_down.name.to_lower().contains("floor") or node_down.name.to_lower().contains("tile"):
+					is_down_valid = true
+			if not is_down_valid:
 				return
 			var target_y: float = down_hit["position"].y
 			var step_h: float = target_y - global_position.y
 			var normal: Vector3 = down_hit["normal"]
 			if step_h > 0.02 and step_h <= 0.65 and normal.y >= 0.55:
-				global_position.y = move_toward(global_position.y, target_y + 0.02, 12.0 * delta)
-				velocity.y = maxf(velocity.y, 0.0)
+				global_position.y = move_toward(global_position.y, target_y + 0.02, 14.0 * delta)
+				velocity.y = maxf(velocity.y, 4.5)
+				floor_snap_length = 0.0
 
 
 # ==============================================================================

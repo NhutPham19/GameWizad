@@ -271,7 +271,97 @@ func _init() -> void:
 		printerr("  FAIL: Hero bị khựng chân thang! Chỉ đạt độ cao %.2fm (< 1.60m)" % climb_h)
 		all_pass = false
 
-	# 2. Kiểm tra Luật Thép: Tuyệt đối 0 Primitive Meshes (BoxMesh, SphereMesh, CylinderMesh, ...)
+	# 2. KIỂM TRA BƯỚC ĐI BỘ LÊN CẢ 3 TUYẾN CẦU THANG THÔNG SUỐT 100% (ZERO KẸT CHÂN / GỜ SÀN)
+	const GRAV := 19.6
+
+	# Tạm thời dời lính ra xa 100m để kiểm tra thuần túy hình học và va chạm của 3 tuyến cầu thang
+	var enemies_node := arena.get_node_or_null("Enemies") as Node3D
+	var original_enemy_positions := {}
+	if enemies_node:
+		for e in enemies_node.get_children():
+			if e is Node3D:
+				var ne := e as Node3D
+				original_enemy_positions[ne] = ne.global_position
+				ne.global_position += Vector3(100.0, 0.0, 0.0)
+
+	# 2A. Bước đi bộ lên Cầu Thang Tây (X = -6.0) từ Tầng 1 lên sàn Tầng 2
+	print("\n  - [2A] Đi bộ lên Cầu Thang Tây (X = -6.0) từ Z = -10.0 lên Tầng 2 (Z <= -17.0, Y >= 3.95m)...")
+	hero.global_position = Vector3(-6.0, 0.05, -10.0)
+	hero.velocity = Vector3.ZERO
+	hero.external_move_dir = Vector3(0.0, 0.0, -1.0)
+	for f in range(200):
+		hero.velocity.x = 0.0
+		hero.velocity.z = -6.5
+		if not hero.is_on_floor():
+			hero.velocity.y -= GRAV * 0.016
+		elif hero.velocity.y < 0.0:
+			hero.velocity.y = 0.0
+		hero._apply_stair_step_up(Vector3(hero.velocity.x, 0.0, hero.velocity.z), 0.016)
+		hero.move_and_slide()
+		hero.floor_snap_length = 0.60
+		await physics_frame
+		if hero.global_position.z <= -17.5:
+			break
+	if hero.global_position.z <= -17.0 and hero.global_position.y >= 3.95:
+		print("    PASS: Đi bộ Cầu Thang Tây lên Tầng 2 mượt mà tuyệt đối! Pos: %s" % str(hero.global_position))
+	else:
+		printerr("    FAIL: Đi bộ Cầu Thang Tây bị kẹt tại %s!" % str(hero.global_position))
+		all_pass = false
+
+	# 2B. Bước đi bộ lên Cầu Thang Đông (X = +6.0) từ Tầng 1 lên sàn Tầng 2
+	print("  - [2B] Đi bộ lên Cầu Thang Đông (X = +6.0) từ Z = -10.0 lên Tầng 2 (Z <= -17.0, Y >= 3.95m)...")
+	hero.global_position = Vector3(6.0, 0.05, -10.0)
+	hero.velocity = Vector3.ZERO
+	hero.external_move_dir = Vector3(0.0, 0.0, -1.0)
+	for f in range(200):
+		hero.velocity.x = 0.0
+		hero.velocity.z = -6.5
+		if not hero.is_on_floor():
+			hero.velocity.y -= GRAV * 0.016
+		elif hero.velocity.y < 0.0:
+			hero.velocity.y = 0.0
+		hero._apply_stair_step_up(Vector3(hero.velocity.x, 0.0, hero.velocity.z), 0.016)
+		hero.move_and_slide()
+		hero.floor_snap_length = 0.60
+		await physics_frame
+		if hero.global_position.z <= -17.5:
+			break
+	if hero.global_position.z <= -17.0 and hero.global_position.y >= 3.95:
+		print("    PASS: Đi bộ Cầu Thang Đông lên Tầng 2 mượt mà tuyệt đối! Pos: %s" % str(hero.global_position))
+	else:
+		printerr("    FAIL: Đi bộ Cầu Thang Đông bị kẹt tại %s!" % str(hero.global_position))
+		all_pass = false
+
+	# 2C. Bước đi bộ lên Cầu Thang Giữa (X = 0.0) từ Tầng 2 lên sàn Tầng 3 (Citadel)
+	print("  - [2C] Đi bộ lên Cầu Thang Giữa (X = 0.0) từ Z = -22.0 lên Tầng 3 (Z <= -29.0, Y >= 7.95m)...")
+	hero.global_position = Vector3(0.0, 4.05, -22.0)
+	hero.velocity = Vector3.ZERO
+	hero.external_move_dir = Vector3(0.0, 0.0, -1.0)
+	for f in range(200):
+		hero.velocity.x = 0.0
+		hero.velocity.z = -6.5
+		if not hero.is_on_floor():
+			hero.velocity.y -= GRAV * 0.016
+		elif hero.velocity.y < 0.0:
+			hero.velocity.y = 0.0
+		hero._apply_stair_step_up(Vector3(hero.velocity.x, 0.0, hero.velocity.z), 0.016)
+		hero.move_and_slide()
+		hero.floor_snap_length = 0.60
+		await physics_frame
+		if hero.global_position.z <= -29.5:
+			break
+	if hero.global_position.z <= -29.0 and hero.global_position.y >= 7.95:
+		print("    PASS: Đi bộ Cầu Thang Giữa lên Tầng 3 mượt mà tuyệt đối! Pos: %s" % str(hero.global_position))
+	else:
+		printerr("    FAIL: Đi bộ Cầu Thang Giữa bị kẹt tại %s!" % str(hero.global_position))
+		all_pass = false
+
+	# Phục hồi lại vị trí ban đầu của quái
+	for ne in original_enemy_positions:
+		if is_instance_valid(ne):
+			ne.global_position = original_enemy_positions[ne]
+
+	# 3. Kiểm tra Luật Thép: Tuyệt đối 0 Primitive Meshes (BoxMesh, SphereMesh, CylinderMesh, ...)
 	var total_mesh_instances := 0
 	var array_mesh_count := 0
 	var primitive_count := 0
