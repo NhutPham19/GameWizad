@@ -629,15 +629,15 @@ func _is_in_stair_walk_corridor(pos: Vector3, move_dir: Vector3) -> bool:
 	if absf(horiz.normalized().y) < 0.25:
 		return false
 
-	# Tọa độ X của nhân vật phải nằm lọt trong lòng rãnh giữa cầu thang (center_x ± 1.40m):
-	# 1. Cầu thang Tây (Tầng 1 <-> 2): center_x = -6.0, Z từ -17.5 đến -9.5
-	if absf(pos.x - (-6.0)) <= 1.40 and pos.z >= -17.5 and pos.z <= -9.5:
+	# Tọa độ X của nhân vật nằm lọt trong lòng rãnh bước đi rộng thoáng của cầu thang:
+	# 1. Cầu thang Tây (Tầng 1 <-> 2): center_x = -6.0, Z từ -17.5 đến -9.5 (walk_half_w = 1.85m -> ±2.10m)
+	if absf(pos.x - (-6.0)) <= 2.10 and pos.z >= -17.5 and pos.z <= -9.5:
 		return true
-	# 2. Cầu thang Đông (Tầng 1 <-> 2): center_x = +6.0, Z từ -17.5 đến -9.5
-	if absf(pos.x - 6.0) <= 1.40 and pos.z >= -17.5 and pos.z <= -9.5:
+	# 2. Cầu thang Đông (Tầng 1 <-> 2): center_x = +6.0, Z từ -17.5 đến -9.5 (walk_half_w = 1.85m -> ±2.10m)
+	if absf(pos.x - 6.0) <= 2.10 and pos.z >= -17.5 and pos.z <= -9.5:
 		return true
-	# 3. Cầu thang Giữa (Tầng 2 <-> 3): center_x = 0.0, Z từ -29.5 đến -21.5
-	if absf(pos.x - 0.0) <= 1.40 and pos.z >= -29.5 and pos.z <= -21.5:
+	# 3. Cầu thang Giữa (Tầng 2 <-> 3): center_x = 0.0, Z từ -29.5 đến -21.5 (walk_half_w = 2.40m -> ±2.60m)
+	if absf(pos.x - 0.0) <= 2.60 and pos.z >= -29.5 and pos.z <= -21.5:
 		return true
 
 	return false

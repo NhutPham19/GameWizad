@@ -1,5 +1,5 @@
 ﻿# 📦 GAMEWIZAD - CURRENT CODE SNAPSHOT
-Thời gian xuất: 2026-11-11 23:06:05
+Thời gian xuất: 2026-11-11 23:20:38
 Môi trường: Godot Engine 4.3+ | Renderer: Forward+ (NVIDIA RTX 4060)
 Kiến trúc: 100% KayKit GLB/GLTF - Zero Primitive Geometry (0% Hình Khối Cơ Bản)
 
@@ -1232,15 +1232,15 @@ func _is_in_stair_walk_corridor(pos: Vector3, move_dir: Vector3) -> bool:
 	if absf(horiz.normalized().y) < 0.25:
 		return false
 
-	# Tọa độ X của nhân vật phải nằm lọt trong lòng rãnh giữa cầu thang (center_x ± 1.40m):
-	# 1. Cầu thang Tây (Tầng 1 <-> 2): center_x = -6.0, Z từ -17.5 đến -9.5
-	if absf(pos.x - (-6.0)) <= 1.40 and pos.z >= -17.5 and pos.z <= -9.5:
+	# Tọa độ X của nhân vật nằm lọt trong lòng rãnh bước đi rộng thoáng của cầu thang:
+	# 1. Cầu thang Tây (Tầng 1 <-> 2): center_x = -6.0, Z từ -17.5 đến -9.5 (walk_half_w = 1.85m -> ±2.10m)
+	if absf(pos.x - (-6.0)) <= 2.10 and pos.z >= -17.5 and pos.z <= -9.5:
 		return true
-	# 2. Cầu thang Đông (Tầng 1 <-> 2): center_x = +6.0, Z từ -17.5 đến -9.5
-	if absf(pos.x - 6.0) <= 1.40 and pos.z >= -17.5 and pos.z <= -9.5:
+	# 2. Cầu thang Đông (Tầng 1 <-> 2): center_x = +6.0, Z từ -17.5 đến -9.5 (walk_half_w = 1.85m -> ±2.10m)
+	if absf(pos.x - 6.0) <= 2.10 and pos.z >= -17.5 and pos.z <= -9.5:
 		return true
-	# 3. Cầu thang Giữa (Tầng 2 <-> 3): center_x = 0.0, Z từ -29.5 đến -21.5
-	if absf(pos.x - 0.0) <= 1.40 and pos.z >= -29.5 and pos.z <= -21.5:
+	# 3. Cầu thang Giữa (Tầng 2 <-> 3): center_x = 0.0, Z từ -29.5 đến -21.5 (walk_half_w = 2.40m -> ±2.60m)
+	if absf(pos.x - 0.0) <= 2.60 and pos.z >= -29.5 and pos.z <= -21.5:
 		return true
 
 	return false
@@ -8621,15 +8621,15 @@ func _is_in_stair_walk_corridor(pos: Vector3, move_dir: Vector3) -> bool:
 	if absf(horiz.normalized().y) < 0.25:
 		return false
 
-	# Tọa độ X của nhân vật phải nằm lọt trong lòng rãnh giữa cầu thang (center_x ± 1.40m):
-	# 1. Cầu thang Tây (Tầng 1 <-> 2): center_x = -6.0, Z từ -17.5 đến -9.5
-	if absf(pos.x - (-6.0)) <= 1.40 and pos.z >= -17.5 and pos.z <= -9.5:
+	# Tọa độ X của nhân vật nằm lọt trong lòng rãnh bước đi rộng thoáng của cầu thang:
+	# 1. Cầu thang Tây (Tầng 1 <-> 2): center_x = -6.0, Z từ -17.5 đến -9.5 (walk_half_w = 1.85m -> ±2.10m)
+	if absf(pos.x - (-6.0)) <= 2.10 and pos.z >= -17.5 and pos.z <= -9.5:
 		return true
-	# 2. Cầu thang Đông (Tầng 1 <-> 2): center_x = +6.0, Z từ -17.5 đến -9.5
-	if absf(pos.x - 6.0) <= 1.40 and pos.z >= -17.5 and pos.z <= -9.5:
+	# 2. Cầu thang Đông (Tầng 1 <-> 2): center_x = +6.0, Z từ -17.5 đến -9.5 (walk_half_w = 1.85m -> ±2.10m)
+	if absf(pos.x - 6.0) <= 2.10 and pos.z >= -17.5 and pos.z <= -9.5:
 		return true
-	# 3. Cầu thang Giữa (Tầng 2 <-> 3): center_x = 0.0, Z từ -29.5 đến -21.5
-	if absf(pos.x - 0.0) <= 1.40 and pos.z >= -29.5 and pos.z <= -21.5:
+	# 3. Cầu thang Giữa (Tầng 2 <-> 3): center_x = 0.0, Z từ -29.5 đến -21.5 (walk_half_w = 2.40m -> ±2.60m)
+	if absf(pos.x - 0.0) <= 2.60 and pos.z >= -29.5 and pos.z <= -21.5:
 		return true
 
 	return false
@@ -9068,7 +9068,8 @@ static func create_bulletproof_stair_assembly(
 	parent: Node3D,
 	stair_visual_node: Node3D,
 	bottom_center: Vector3,
-	top_center: Vector3
+	top_center: Vector3,
+	custom_walk_half_w: float = -1.0
 ) -> StaticBody3D:
 	var min_y := minf(bottom_center.y, top_center.y)
 	var max_y := maxf(bottom_center.y, top_center.y)
@@ -9084,8 +9085,15 @@ static func create_bulletproof_stair_assembly(
 	var outer_min_z := minf(exact_bounds.position.z - 0.40, min_z - 0.60)
 	var outer_max_z := maxf(exact_bounds.end.z + 0.10, max_z + 0.25)
 
-	# Lòng rãnh bước đi ở chính giữa cầu thang: rộng 2.30m (từ center_x - 1.15m đến center_x + 1.15m)
-	var walk_half_w := 1.15
+	# Lòng rãnh bước đi ở chính giữa cầu thang:
+	# Thu hẹp phần viền tàng hình, mở rộng lối đi thông thoáng cho nhân vật:
+	# - Cầu thang giữa lên Tầng 3 (Citadel, center_x = 0.0): Bậc thang rộng 5.5m -> walk_half_w = 2.40m (lối đi 4.80m)
+	# - Cầu thang Tây / Đông (center_x = ±6.0): Nằm trong khe tường 4.0m -> walk_half_w = 1.85m (lối đi 3.70m)
+	var walk_half_w := 1.85
+	if custom_walk_half_w > 0.0:
+		walk_half_w = custom_walk_half_w
+	elif absf(center_x) < 0.2:
+		walk_half_w = 2.40
 
 	# ==========================================================================
 	# BODY 1: KHỐI TƯỜNG ĐẶC BẢO VỆ HÔNG, GẦM & GÓC GIAO CẦU THANG
@@ -9104,9 +9112,9 @@ static func create_bulletproof_stair_assembly(
 	var side_z_len := outer_max_z - outer_min_z
 	var side_z_mid := (outer_min_z + outer_max_z) * 0.5
 
-	# 1A. Thành Đá Chắn Hông Trái (-X) — Phủ kín từ lòng rãnh (center_x - 1.15) ra tận mép ngoài (outer_min_x)
+	# 1A. Thành Đá Chắn Hông Trái (-X) — Phủ kín từ mép lòng rãnh (center_x - walk_half_w) ra tận mép ngoài (outer_min_x)
 	var left_inner_x := center_x - walk_half_w
-	var left_w := maxf(1.25, left_inner_x - outer_min_x)
+	var left_w := maxf(0.80, left_inner_x - outer_min_x)
 	var left_col := CollisionShape3D.new()
 	left_col.name = "StairSideWall_Left"
 	var left_box := BoxShape3D.new()
@@ -9115,9 +9123,9 @@ static func create_bulletproof_stair_assembly(
 	left_col.position = Vector3((outer_min_x + left_inner_x) * 0.5, min_y + wall_height * 0.5, side_z_mid)
 	shell_body.add_child(left_col)
 
-	# 1B. Thành Đá Chắn Hông Phải (+X) — Phủ kín từ lòng rãnh (center_x + 1.15) ra tận mép ngoài (outer_max_x)
+	# 1B. Thành Đá Chắn Hông Phải (+X) — Phủ kín từ mép lòng rãnh (center_x + walk_half_w) ra tận mép ngoài (outer_max_x)
 	var right_inner_x := center_x + walk_half_w
-	var right_w := maxf(1.25, outer_max_x - right_inner_x)
+	var right_w := maxf(0.80, outer_max_x - right_inner_x)
 	var right_col := CollisionShape3D.new()
 	right_col.name = "StairSideWall_Right"
 	var right_box := BoxShape3D.new()
@@ -17279,6 +17287,54 @@ func _init() -> void:
 		print("    PASS: Đi bộ Cầu Thang Giữa lên Tầng 3 mượt mà tuyệt đối! Pos: %s" % str(hero.global_position))
 	else:
 		printerr("    FAIL: Đi bộ Cầu Thang Giữa bị kẹt tại %s!" % str(hero.global_position))
+		all_pass = false
+
+	# 2D. Đi bộ lệch sườn Tây Cầu Thang Giữa (X = -1.60m) - Chứng minh lối đi đã mở rộng, viền tàng hình đã thu nhỏ
+	print("  - [2D] Đi bộ lệch sườn Tây Cầu Thang Giữa (X = -1.60m, lối đi mở rộng)...")
+	hero.global_position = Vector3(-1.60, 4.05, -22.0)
+	hero.velocity = Vector3.ZERO
+	hero.external_move_dir = Vector3(0.0, 0.0, -1.0)
+	for f in range(200):
+		hero.velocity.x = 0.0
+		hero.velocity.z = -6.5
+		if not hero.is_on_floor():
+			hero.velocity.y -= GRAV * 0.016
+		elif hero.velocity.y < 0.0:
+			hero.velocity.y = 0.0
+		hero._apply_stair_step_up(Vector3(hero.velocity.x, 0.0, hero.velocity.z), 0.016)
+		hero.move_and_slide()
+		hero.floor_snap_length = 0.60
+		await physics_frame
+		if hero.global_position.z <= -29.5:
+			break
+	if hero.global_position.z <= -29.0 and hero.global_position.y >= 7.95:
+		print("    PASS: Đi bộ lệch sườn Tây (X = -1.60m) lên Tầng 3 mượt mà tuyệt đối! Pos: %s" % str(hero.global_position))
+	else:
+		printerr("    FAIL: Đi bộ lệch sườn Tây bị kẹt tại %s!" % str(hero.global_position))
+		all_pass = false
+
+	# 2E. Đi bộ lệch sườn Đông Cầu Thang Giữa (X = +1.60m) - Chứng minh lối đi đã mở rộng, viền tàng hình đã thu nhỏ
+	print("  - [2E] Đi bộ lệch sườn Đông Cầu Thang Giữa (X = +1.60m, lối đi mở rộng)...")
+	hero.global_position = Vector3(1.60, 4.05, -22.0)
+	hero.velocity = Vector3.ZERO
+	hero.external_move_dir = Vector3(0.0, 0.0, -1.0)
+	for f in range(200):
+		hero.velocity.x = 0.0
+		hero.velocity.z = -6.5
+		if not hero.is_on_floor():
+			hero.velocity.y -= GRAV * 0.016
+		elif hero.velocity.y < 0.0:
+			hero.velocity.y = 0.0
+		hero._apply_stair_step_up(Vector3(hero.velocity.x, 0.0, hero.velocity.z), 0.016)
+		hero.move_and_slide()
+		hero.floor_snap_length = 0.60
+		await physics_frame
+		if hero.global_position.z <= -29.5:
+			break
+	if hero.global_position.z <= -29.0 and hero.global_position.y >= 7.95:
+		print("    PASS: Đi bộ lệch sườn Đông (X = +1.60m) lên Tầng 3 mượt mà tuyệt đối! Pos: %s" % str(hero.global_position))
+	else:
+		printerr("    FAIL: Đi bộ lệch sườn Đông bị kẹt tại %s!" % str(hero.global_position))
 		all_pass = false
 
 	# Phục hồi lại trạng thái hoạt động của quái

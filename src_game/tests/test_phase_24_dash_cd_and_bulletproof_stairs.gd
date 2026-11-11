@@ -358,6 +358,54 @@ func _init() -> void:
 		printerr("    FAIL: Đi bộ Cầu Thang Giữa bị kẹt tại %s!" % str(hero.global_position))
 		all_pass = false
 
+	# 2D. Đi bộ lệch sườn Tây Cầu Thang Giữa (X = -1.60m) - Chứng minh lối đi đã mở rộng, viền tàng hình đã thu nhỏ
+	print("  - [2D] Đi bộ lệch sườn Tây Cầu Thang Giữa (X = -1.60m, lối đi mở rộng)...")
+	hero.global_position = Vector3(-1.60, 4.05, -22.0)
+	hero.velocity = Vector3.ZERO
+	hero.external_move_dir = Vector3(0.0, 0.0, -1.0)
+	for f in range(200):
+		hero.velocity.x = 0.0
+		hero.velocity.z = -6.5
+		if not hero.is_on_floor():
+			hero.velocity.y -= GRAV * 0.016
+		elif hero.velocity.y < 0.0:
+			hero.velocity.y = 0.0
+		hero._apply_stair_step_up(Vector3(hero.velocity.x, 0.0, hero.velocity.z), 0.016)
+		hero.move_and_slide()
+		hero.floor_snap_length = 0.60
+		await physics_frame
+		if hero.global_position.z <= -29.5:
+			break
+	if hero.global_position.z <= -29.0 and hero.global_position.y >= 7.95:
+		print("    PASS: Đi bộ lệch sườn Tây (X = -1.60m) lên Tầng 3 mượt mà tuyệt đối! Pos: %s" % str(hero.global_position))
+	else:
+		printerr("    FAIL: Đi bộ lệch sườn Tây bị kẹt tại %s!" % str(hero.global_position))
+		all_pass = false
+
+	# 2E. Đi bộ lệch sườn Đông Cầu Thang Giữa (X = +1.60m) - Chứng minh lối đi đã mở rộng, viền tàng hình đã thu nhỏ
+	print("  - [2E] Đi bộ lệch sườn Đông Cầu Thang Giữa (X = +1.60m, lối đi mở rộng)...")
+	hero.global_position = Vector3(1.60, 4.05, -22.0)
+	hero.velocity = Vector3.ZERO
+	hero.external_move_dir = Vector3(0.0, 0.0, -1.0)
+	for f in range(200):
+		hero.velocity.x = 0.0
+		hero.velocity.z = -6.5
+		if not hero.is_on_floor():
+			hero.velocity.y -= GRAV * 0.016
+		elif hero.velocity.y < 0.0:
+			hero.velocity.y = 0.0
+		hero._apply_stair_step_up(Vector3(hero.velocity.x, 0.0, hero.velocity.z), 0.016)
+		hero.move_and_slide()
+		hero.floor_snap_length = 0.60
+		await physics_frame
+		if hero.global_position.z <= -29.5:
+			break
+	if hero.global_position.z <= -29.0 and hero.global_position.y >= 7.95:
+		print("    PASS: Đi bộ lệch sườn Đông (X = +1.60m) lên Tầng 3 mượt mà tuyệt đối! Pos: %s" % str(hero.global_position))
+	else:
+		printerr("    FAIL: Đi bộ lệch sườn Đông bị kẹt tại %s!" % str(hero.global_position))
+		all_pass = false
+
 	# Phục hồi lại trạng thái hoạt động của quái
 	for ce in disabled_enemies:
 		if is_instance_valid(ce):

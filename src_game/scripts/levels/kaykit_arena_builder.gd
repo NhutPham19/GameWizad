@@ -200,7 +200,8 @@ static func create_bulletproof_stair_assembly(
 	parent: Node3D,
 	stair_visual_node: Node3D,
 	bottom_center: Vector3,
-	top_center: Vector3
+	top_center: Vector3,
+	custom_walk_half_w: float = -1.0
 ) -> StaticBody3D:
 	var min_y := minf(bottom_center.y, top_center.y)
 	var max_y := maxf(bottom_center.y, top_center.y)
@@ -216,8 +217,15 @@ static func create_bulletproof_stair_assembly(
 	var outer_min_z := minf(exact_bounds.position.z - 0.40, min_z - 0.60)
 	var outer_max_z := maxf(exact_bounds.end.z + 0.10, max_z + 0.25)
 
-	# Lòng rãnh bước đi ở chính giữa cầu thang: rộng 2.30m (từ center_x - 1.15m đến center_x + 1.15m)
-	var walk_half_w := 1.15
+	# Lòng rãnh bước đi ở chính giữa cầu thang:
+	# Thu hẹp phần viền tàng hình, mở rộng lối đi thông thoáng cho nhân vật:
+	# - Cầu thang giữa lên Tầng 3 (Citadel, center_x = 0.0): Bậc thang rộng 5.5m -> walk_half_w = 2.40m (lối đi 4.80m)
+	# - Cầu thang Tây / Đông (center_x = ±6.0): Nằm trong khe tường 4.0m -> walk_half_w = 1.85m (lối đi 3.70m)
+	var walk_half_w := 1.85
+	if custom_walk_half_w > 0.0:
+		walk_half_w = custom_walk_half_w
+	elif absf(center_x) < 0.2:
+		walk_half_w = 2.40
 
 	# ==========================================================================
 	# BODY 1: KHỐI TƯỜNG ĐẶC BẢO VỆ HÔNG, GẦM & GÓC GIAO CẦU THANG
@@ -236,9 +244,9 @@ static func create_bulletproof_stair_assembly(
 	var side_z_len := outer_max_z - outer_min_z
 	var side_z_mid := (outer_min_z + outer_max_z) * 0.5
 
-	# 1A. Thành Đá Chắn Hông Trái (-X) — Phủ kín từ lòng rãnh (center_x - 1.15) ra tận mép ngoài (outer_min_x)
+	# 1A. Thành Đá Chắn Hông Trái (-X) — Phủ kín từ mép lòng rãnh (center_x - walk_half_w) ra tận mép ngoài (outer_min_x)
 	var left_inner_x := center_x - walk_half_w
-	var left_w := maxf(1.25, left_inner_x - outer_min_x)
+	var left_w := maxf(0.80, left_inner_x - outer_min_x)
 	var left_col := CollisionShape3D.new()
 	left_col.name = "StairSideWall_Left"
 	var left_box := BoxShape3D.new()
@@ -247,9 +255,9 @@ static func create_bulletproof_stair_assembly(
 	left_col.position = Vector3((outer_min_x + left_inner_x) * 0.5, min_y + wall_height * 0.5, side_z_mid)
 	shell_body.add_child(left_col)
 
-	# 1B. Thành Đá Chắn Hông Phải (+X) — Phủ kín từ lòng rãnh (center_x + 1.15) ra tận mép ngoài (outer_max_x)
+	# 1B. Thành Đá Chắn Hông Phải (+X) — Phủ kín từ mép lòng rãnh (center_x + walk_half_w) ra tận mép ngoài (outer_max_x)
 	var right_inner_x := center_x + walk_half_w
-	var right_w := maxf(1.25, outer_max_x - right_inner_x)
+	var right_w := maxf(0.80, outer_max_x - right_inner_x)
 	var right_col := CollisionShape3D.new()
 	right_col.name = "StairSideWall_Right"
 	var right_box := BoxShape3D.new()

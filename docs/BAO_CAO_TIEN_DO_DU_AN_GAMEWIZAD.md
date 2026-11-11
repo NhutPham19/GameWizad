@@ -111,19 +111,23 @@ Giai đoạn 24 và bản vá nóng vừa qua đã giải quyết dứt điểm 
 - **HUD Trực Quan:** Thanh Cooldown HUD hiển thị chính xác trạng thái: `[Space] Lướt: CD: 1.0s` -> giảm dần về `SẴN SÀNG`.
 
 ### 2. Xóa Sổ Triệt Để Hiện Tượng Kẹt Cầu Thang (Stair Walking & Dashing Stuck)
-Qua chẩn đoán phân tích vật lý tầng sâu, đội ngũ đã phát hiện và xử lý trọn vẹn 4 nguyên nhân gốc rễ:
-1. **Loại bỏ khối ngầm `UnderStairSolidCore`:** Khối hộp đặc 4.0m trước đây đặt ở gầm cầu thang nhưng có đỉnh cao $Y = 3.1\text{m}$, nhô cao hơn mặt dốc tại $Z = -13.25\text{m}$ đến 3.0m, chặn đứng đường đi của nhân vật. Khối này đã bị xóa bỏ hoàn toàn.
-2. **Lùi vách đá Tầng 2 & Tầng 3:** Các khối nền đá đặc `Solid_Core_Tier2` và `Solid_Core_Tier3` được lùi mặt trước về $Z \le -16.4\text{m}$ và $Z \le -28.4\text{m}$, nằm hoàn toàn phía sau cầu thang, không còn lấn vào đỉnh dốc.
-3. **Căn chỉnh tiếp tuyến mặt dốc (`WalkableRampSurface`):**
+Qua chẩn đoán phân tích vật lý tầng sâu, đội ngũ đã phát hiện và xử lý trọn vẹn 5 nguyên nhân gốc rễ:
+1. **Thu nhỏ viền tàng hình & Mở rộng lối đi cầu thang (Hotfix Border Refinement):**
+   - Trước đây, `walk_half_w = 1.15m` khiến hai khối viền tàng hình `StairSideWall_Left/Right` thò sâu vào lòng bậc thang đến 1.6m mỗi bên, ép lối đi xuống chỉ còn 2.30m (quá hẹp so với bậc thang thực tế rộng 5.5m - 7.0m).
+   - Đã thu nhỏ phần tàng hình: Cầu thang Giữa Tầng 3 nâng lên `walk_half_w = 2.40m` (lối đi rộng tới **4.80m**); Cầu thang Tây/Đông nâng lên `walk_half_w = 1.85m` (lối đi rộng **3.70m**).
+   - Khối viền bảo vệ tàng hình được đẩy sát về đúng vị trí lan can đá (Stone Balustrade), giải phóng 100% bề mặt bậc thang giúp nhân vật bước đi thoải mái, không còn bị cấn hay kẹt khi di chuyển lệch tâm.
+2. **Loại bỏ khối ngầm `UnderStairSolidCore`:** Khối hộp đặc 4.0m trước đây đặt ở gầm cầu thang nhưng có đỉnh cao $Y = 3.1\text{m}$, nhô cao hơn mặt dốc tại $Z = -13.25\text{m}$ đến 3.0m, chặn đứng đường đi của nhân vật. Khối này đã bị xóa bỏ hoàn toàn.
+3. **Lùi vách đá Tầng 2 & Tầng 3:** Các khối nền đá đặc `Solid_Core_Tier2` và `Solid_Core_Tier3` được lùi mặt trước về $Z \le -16.4\text{m}$ và $Z \le -28.4\text{m}$, nằm hoàn toàn phía sau cầu thang, không còn lấn vào đỉnh dốc.
+4. **Căn chỉnh tiếp tuyến mặt dốc (`WalkableRampSurface`):**
    - Chân dốc: `Vector3(center_x, min_y - 0.08, max_z + 0.20)` (vát âm -0.08m triệt tiêu gờ chân dốc).
    - Đỉnh dốc: `Vector3(center_x, max_y + 0.06, min_z - 0.40)` (vươn cao +0.06m và lùi sâu -0.40m giúp bước chuyển tiếp lên sàn tầng 2/3 phẳng mịn).
-4. **Cơ chế Bước Nhấc Chân (`_apply_stair_step_up`) Vượt Gờ Sàn & Bỏ Qua Floor Snap:**
+5. **Cơ chế Bước Nhấc Chân (`_apply_stair_step_up`) Vượt Gờ Sàn & Bỏ Qua Floor Snap:**
    - Khi nhân vật leo lên gần đỉnh dốc và chạm vào cạnh của tấm gạch sàn (`floor/tile`), hàm tự động phát hiện và áp dụng vận tốc nâng $V_y = 4.5\text{m/s}$.
    - **Đặc biệt:** Trong frame bước nhấc chân, `floor_snap_length` được tạm thời đặt về `0.0` để vô hiệu hóa cơ chế kéo ghì của Godot, sau đó tự động khôi phục về `0.60m` ngay sau khi gọi `move_and_slide()`.
 
 ### 3. Thành Tựu Thực Nghiệm:
-- Nhân vật bước đi bộ bình thường (chỉ dùng phím điều hướng W/S) leo thông suốt từ Tầng 1 lên Tầng 2 qua Cầu thang Tây, Cầu thang Đông và leo lên Tầng 3 qua Cầu thang Giữa mà **không gặp bất kỳ điểm khựng hay va chạm nào**.
-- Nhân vật lướt Space Dash từ chân dốc vút lên đạt độ cao **3.49m trong đúng 1 cú lướt duy nhất** (vượt xa chỉ tiêu kỹ thuật $\ge 1.60\text{m}$).
+- Nhân vật bước đi bộ bình thường (chỉ dùng phím điều hướng W/S) leo thông suốt từ Tầng 1 lên Tầng 2 qua Cầu thang Tây, Cầu thang Đông và leo lên Tầng 3 qua Cầu thang Giữa cả ở **tâm đường lẫn khi đi lệch sườn (X = ±1.60m) mà không gặp bất kỳ điểm khựng hay va chạm nào**.
+- Nhân vật lướt Space Dash từ chân dốc vút lên đạt độ cao **4.07m trong đúng 1 cú lướt duy nhất** (vượt xa chỉ tiêu kỹ thuật $\ge 1.60\text{m}$).
 
 ---
 
@@ -201,16 +205,20 @@ Mọi tính năng và cải tiến trong Giai đoạn 24 đều được kiểm 
     PASS: Dừng bên ngoài thành cầu thang (0% xuyên thành!) & Độ cao Y phẳng tuyệt đối (<0.005m)
 
 >>> [TEST 24.3 - BƯỚC ĐI VÀ LƯỚT DASH THẲNG LÊN CẦU THANG MƯỢT MÀ]...
-  - Dash start: (Y=0.05, Z=-11.00) | Dash end: (Y=3.54, Z=-14.41)
-  - Height climbed in 1 dash: 3.49m (Yêu cầu: >= 1.60m)
-  - Forward advanced: 3.41m
-  PASS: Hero lướt lên cầu thang mượt mà, đạt độ cao 3.49m (>= 1.60m) trong 1 cú lướt duy nhất!
+  - Dash start: (Y=0.05, Z=-11.00) | Dash end: (Y=4.12, Z=-15.21)
+  - Height climbed in 1 dash: 4.07m (Yêu cầu: >= 1.60m)
+  - Forward advanced: 4.21m
+  PASS: Hero lướt lên cầu thang mượt mà, đạt độ cao 4.07m (>= 1.60m) trong 1 cú lướt duy nhất!
   - [2A] Đi bộ lên Cầu Thang Tây (X = -6.0) từ Z = -10.0 lên Tầng 2:
-    PASS: Đi bộ Cầu Thang Tây lên Tầng 2 mượt mà tuyệt đối! Pos: (-6.00, 4.05, -17.50)
+    PASS: Đi bộ Cầu Thang Tây lên Tầng 2 mượt mà tuyệt đối! Pos: (-6.00, 4.05, -17.56)
   - [2B] Đi bộ lên Cầu Thang Đông (X = +6.0) từ Z = -10.0 lên Tầng 2:
     PASS: Đi bộ Cầu Thang Đông lên Tầng 2 mượt mà tuyệt đối! Pos: (6.00, 4.05, -17.56)
   - [2C] Đi bộ lên Cầu Thang Giữa (X = 0.0) từ Z = -22.0 lên Tầng 3:
     PASS: Đi bộ Cầu Thang Giữa lên Tầng 3 mượt mà tuyệt đối! Pos: (0.00, 8.05, -29.56)
+  - [2D] Đi bộ lệch sườn Tây Cầu Thang Giữa (X = -1.60m, lối đi mở rộng):
+    PASS: Đi bộ lệch sườn Tây (X = -1.60m) lên Tầng 3 mượt mà tuyệt đối! Pos: (-1.60, 8.05, -29.56)
+  - [2E] Đi bộ lệch sườn Đông Cầu Thang Giữa (X = +1.60m, lối đi mở rộng):
+    PASS: Đi bộ lệch sườn Đông (X = +1.60m) lên Tầng 3 mượt mà tuyệt đối! Pos: (1.60, 8.05, -29.56)
   - Total scanned meshes: 236 | ArrayMeshes: 236 | PrimitiveMeshes: 0
   PASS: ZERO PRIMITIVE MESHES CONFIRMED (primitive_count == 0, 100% KayKit GLB / Custom ArrayMesh)
 
