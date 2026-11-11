@@ -14,6 +14,7 @@ extends Camera3D
 
 var shake_intensity: float = 0.0
 var shake_decay: float = 5.0
+var _faded_meshes: Array[MeshInstance3D] = []
 
 func _ready() -> void:
 	add_to_group("camera")
@@ -53,6 +54,59 @@ func _physics_process(delta: float) -> void:
 		desired_pos += shake_offset
 		
 	global_position = global_position.lerp(desired_pos, follow_speed * delta)
+	_update_occlusion_fade()
+
+func _update_occlusion_fade() -> void:
+	if not is_instance_valid(target_node):
+		_restore_faded_meshes()
+		return
+
+	var target_chest: Vector3 = target_node.global_position + Vector3(0.0, 1.0, 0.0)
+	var cam_pos: Vector3 = global_position
+	var diff: Vector3 = target_chest - cam_pos
+	var dist := diff.length()
+	if dist < 0.5:
+		_restore_faded_meshes()
+		return
+
+	var space_state := get_world_3d().direct_space_state
+	var query := PhysicsRayQueryParameters3D.create(cam_pos, target_chest, 1)
+	if target_node is CollisionObject3D:
+		query.exclude = [(target_node as CollisionObject3D).get_rid()]
+
+	var hit := space_state.intersect_ray(query)
+	var new_faded: Array[MeshInstance3D] = []
+
+	if not hit.is_empty():
+		var hit_pos: Vector3 = hit["position"]
+		if hit_pos.distance_to(target_chest) > 0.4:
+			var collider = hit["collider"]
+			if collider is Node:
+				var node := collider as Node
+				var meshes: Array[Node] = []
+				if node is MeshInstance3D:
+					meshes.append(node)
+				meshes.append_array(node.find_children("*", "MeshInstance3D", true, false))
+				if node.get_parent() != null and node.get_parent() != get_tree().current_scene:
+					meshes.append_array(node.get_parent().find_children("*", "MeshInstance3D", true, false))
+
+				for m in meshes:
+					var mi := m as MeshInstance3D
+					if is_instance_valid(mi) and not new_faded.has(mi):
+						new_faded.append(mi)
+						mi.transparency = 0.65
+
+	for old_m in _faded_meshes:
+		if is_instance_valid(old_m) and not new_faded.has(old_m):
+			old_m.transparency = 0.0
+
+	_faded_meshes = new_faded
+
+func _restore_faded_meshes() -> void:
+	for m in _faded_meshes:
+		if is_instance_valid(m):
+			m.transparency = 0.0
+	_faded_meshes.clear()
 
 func add_screen_shake(amount: float) -> void:
 	shake_intensity = clamp(shake_intensity + amount, 0.0, 1.5)

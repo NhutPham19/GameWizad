@@ -1,5 +1,5 @@
 ﻿# 📦 GAMEWIZAD - CURRENT CODE SNAPSHOT
-Thời gian xuất: 2026-11-11 12:21:37
+Thời gian xuất: 2026-11-11 18:08:11
 Môi trường: Godot Engine 4.3+ | Renderer: Forward+ (NVIDIA RTX 4060)
 Kiến trúc: 100% KayKit GLB/GLTF - Zero Primitive Geometry (0% Hình Khối Cơ Bản)
 
@@ -631,6 +631,10 @@ const SPIN_RANGE: float = 3.5
 const SPIN_DAMAGE: float = 35.0
 const SWORD_TRAIL_DURATION: float = 0.28
 const COMBO_WINDOW: float = 0.45
+const COOLDOWN_Q: float = 5.0
+const COOLDOWN_RMB: float = 3.5
+const COOLDOWN_E: float = 6.0
+const MAX_E_THROW_RANGE: float = 7.5
 
 # --- Animation Names (KayKit 75 anims) ---
 const ANIM_IDLE := "Idle"
@@ -685,6 +689,16 @@ var _throw_timer: float = 0.0
 var _is_throwing_e: bool = false
 var _lunge_timer: float = 0.0
 var _lunge_dir: Vector3 = Vector3.ZERO
+var _cd_q_timer: float = 0.0
+var _cd_rmb_timer: float = 0.0
+var _cd_e_timer: float = 0.0
+var _buffered_action: String = ""
+var _buffer_timer: float = 0.0
+var _facing_angle: float = 0.0
+var _combat_facing_lock_timer: float = 0.0
+var _rmb_cleave_timer: float = 0.0
+var _rmb_cleave_dir: Vector3 = Vector3.ZERO
+var _rmb_wave_spawned: bool = false
 
 # --- Stats ---
 var hp: float = 100.0
@@ -697,20 +711,20 @@ func _ready() -> void:
 	collision_layer = 2
 	collision_mask = 1 | 4
 
-	# --- Cấu hình CharacterBody3D chuẩn leo dốc / cầu thang (Directive 19) ---
+	# --- Cấu hình CharacterBody3D chuẩn leo dốc / cầu thang (Directive 19 & 21) ---
 	floor_snap_length = 0.60
 	floor_max_angle = deg_to_rad(62.0)
 	floor_stop_on_slope = true
 	floor_constant_speed = true
 	floor_block_on_wall = true
-	safe_margin = 0.04
+	safe_margin = 0.05
 	wall_min_slide_angle = deg_to_rad(10.0)
 
 	# --- Collision Shape ---
 	var col_shape := CollisionShape3D.new()
 	col_shape.name = "PlayerCollision"
 	var capsule := CapsuleShape3D.new()
-	capsule.radius = 0.52
+	capsule.radius = 0.46
 	capsule.height = 1.80
 	col_shape.shape = capsule
 	col_shape.position = Vector3(0.0, 0.90, 0.0)
@@ -828,6 +842,51 @@ func _physics_process(delta: float) -> void:
 		if _landing_timer <= 0.0:
 			_jump_state = 0
 
+	# --- Cooldowns (Task 21.1 & 21.2) ---
+	_cd_q_timer = maxf(0.0, _cd_q_timer - delta)
+	_cd_rmb_timer = maxf(0.0, _cd_rmb_timer - delta)
+	_cd_e_timer = maxf(0.0, _cd_e_timer - delta)
+
+	# --- Combat Facing Lock (Task 21.5) ---
+	if _combat_facing_lock_timer > 0.0:
+		_combat_facing_lock_timer -= delta
+		if visual_root != null:
+			visual_root.rotation.y = _facing_angle
+
+	# --- Input Buffer (0.18s, Task 21.2) ---
+	if _buffer_timer > 0.0:
+		_buffer_timer -= delta
+		if _buffered_action != "" and _action_lock_timer <= 0.0:
+			if _buffered_action == "skill_q" and _cd_q_timer <= 0.0 and not _is_spinning_q:
+				_buffered_action = ""
+				_buffer_timer = 0.0
+				_do_spin_attack()
+			elif _buffered_action == "skill_rmb" and _cd_rmb_timer <= 0.0:
+				_buffered_action = ""
+				_buffer_timer = 0.0
+				_do_rmb_cross_cleave()
+			elif _buffered_action == "skill_e" and _cd_e_timer <= 0.0 and not _is_throwing_e:
+				_buffered_action = ""
+				_buffer_timer = 0.0
+				_do_ranged_throw()
+		if _buffer_timer <= 0.0:
+			_buffered_action = ""
+
+	# --- RMB Solar Cross-Cleave Dash (Task 21.3) ---
+	if _rmb_cleave_timer > 0.0:
+		_rmb_cleave_timer -= delta
+		velocity.x = _rmb_cleave_dir.x * 15.7
+		velocity.z = _rmb_cleave_dir.z * 15.7
+		if visual_root:
+			visual_root.rotation.y = _facing_angle
+		_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
+		move_and_slide()
+		if _rmb_cleave_timer <= 0.0 and not _rmb_wave_spawned:
+			_rmb_wave_spawned = true
+			_trigger_rmb_phase_two(_rmb_cleave_dir)
+		_apply_wall_micro_separation(delta)
+		return
+
 	# --- Gravity ---
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
@@ -841,6 +900,7 @@ func _physics_process(delta: float) -> void:
 		_is_spinning_q = false
 		_is_throwing_e = false
 		_lunge_timer = 0.0
+		_rmb_cleave_timer = 0.0
 		_do_dodge()
 		return
 
@@ -879,9 +939,10 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		# Kiểm tra va đập khi lướt vào bot (Task 19.3 Lớp 2)
 		_check_dash_impact_against_enemies()
+		_apply_wall_micro_separation(delta)
 		return
 
-	# --- Xoay Kiếm Q Đang Hoạt Động (Task 19.4 Kỹ thuật B: Vừa di chuyển vừa xoay) ---
+	# --- Xoay Kiếm Q Đang Hoạt Động (Task 19.4 Kỹ thuật B & Task 21.2 Vacuum Pull) ---
 	if _is_spinning_q:
 		_spin_timer -= delta
 		if _spin_timer <= 0.0:
@@ -890,17 +951,33 @@ func _physics_process(delta: float) -> void:
 			if anim_player:
 				anim_player.speed_scale = 1.0
 		else:
+			# Kéo nhẹ Bot về phía nhân vật 0.35m trong 3 nhịp đầu (Whirlwind Vacuum Pull)
+			if _spin_timer > 0.10:
+				var pull_bots := get_tree().get_nodes_in_group("enemies")
+				for pb in pull_bots:
+					if is_instance_valid(pb) and pb is CharacterBody3D and not pb.get("is_dead"):
+						var diff_vec: Vector3 = global_position - (pb as Node3D).global_position
+						diff_vec.y = 0.0
+						var d_len := diff_vec.length()
+						if d_len > 0.4 and d_len <= 3.4:
+							var pull_dir := diff_vec.normalized()
+							(pb as CharacterBody3D).global_position += pull_dir * minf(0.35 * delta * 7.5, d_len - 0.4)
+
 			var spin_mv := _get_movement_input_vector()
 			if spin_mv.length_squared() > 0.01:
 				velocity.x = spin_mv.x * (RUN_SPEED * 0.80)
 				velocity.z = spin_mv.z * (RUN_SPEED * 0.80)
 				if visual_root:
-					visual_root.rotation.y = atan2(spin_mv.x, spin_mv.z)
+					if _combat_facing_lock_timer > 0.0:
+						visual_root.rotation.y = _facing_angle
+					else:
+						visual_root.rotation.y = atan2(spin_mv.x, spin_mv.z)
 			else:
 				velocity.x = 0.0
 				velocity.z = 0.0
 			_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 			move_and_slide()
+			_apply_wall_micro_separation(delta)
 			return
 
 	# --- Ném Bom Khói E Đang Hoạt Động (Task 19.4 Kỹ thuật B: Vừa di chuyển vừa ném) ---
@@ -917,12 +994,16 @@ func _physics_process(delta: float) -> void:
 				velocity.x = throw_mv.x * RUN_SPEED
 				velocity.z = throw_mv.z * RUN_SPEED
 				if visual_root:
-					visual_root.rotation.y = atan2(throw_mv.x, throw_mv.z)
+					if _combat_facing_lock_timer > 0.0:
+						visual_root.rotation.y = _facing_angle
+					else:
+						visual_root.rotation.y = atan2(throw_mv.x, throw_mv.z)
 			else:
 				velocity.x = 0.0
 				velocity.z = 0.0
 			_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 			move_and_slide()
+			_apply_wall_micro_separation(delta)
 			return
 
 	# --- Bước Tấn Công Cận Chiến (Task 19.4 Kỹ thuật A: Step-Lunge 0.14s) ---
@@ -930,42 +1011,56 @@ func _physics_process(delta: float) -> void:
 		_lunge_timer -= delta
 		velocity.x = _lunge_dir.x * 6.2
 		velocity.z = _lunge_dir.z * 6.2
-		if visual_root and _lunge_dir.length_squared() > 0.01:
-			visual_root.rotation.y = atan2(_lunge_dir.x, _lunge_dir.z)
+		if visual_root:
+			if _combat_facing_lock_timer > 0.0:
+				visual_root.rotation.y = _facing_angle
+			elif _lunge_dir.length_squared() > 0.01:
+				visual_root.rotation.y = atan2(_lunge_dir.x, _lunge_dir.z)
 		_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 		move_and_slide()
+		_apply_wall_micro_separation(delta)
 		return
 	elif _action_lock_timer > 0.0:
 		# Pha 2 (0.14s -> 0.24s): Đặt trụ vững, chém trúng đích, 0% trượt chân
 		velocity.x = 0.0
 		velocity.z = 0.0
 		move_and_slide()
+		_apply_wall_micro_separation(delta)
 		return
 
 	# --- Input Di Chuyển & Chiến Đấu Bình Thường (can_act) ---
 	var input_dir := _get_movement_input_vector()
 	var can_act: bool = _action_lock_timer <= 0.0 and _jump_state == 0
 
-	# --- Xử lý hành động chiến đấu ---
+	# --- Xử lý hành động chiến đấu & Bộ đệm phím (Task 21.2) ---
+	if Input.is_action_just_pressed("skill_rmb"):
+		if can_act and _cd_rmb_timer <= 0.0:
+			_do_rmb_cross_cleave()
+			return
+		elif _cd_rmb_timer <= 0.18 or _action_lock_timer <= 0.18:
+			_buffered_action = "skill_rmb"
+			_buffer_timer = 0.18
+
+	if Input.is_action_just_pressed("skill_q"):
+		if can_act and _cd_q_timer <= 0.0 and not _is_spinning_q:
+			_do_spin_attack()
+			return
+		elif _cd_q_timer <= 0.18 or _action_lock_timer <= 0.18:
+			_buffered_action = "skill_q"
+			_buffer_timer = 0.18
+
+	if Input.is_action_just_pressed("skill_e"):
+		if can_act and _cd_e_timer <= 0.0 and not _is_throwing_e:
+			_do_ranged_throw()
+			return
+		elif _cd_e_timer <= 0.18 or _action_lock_timer <= 0.18:
+			_buffered_action = "skill_e"
+			_buffer_timer = 0.18
+
 	if can_act:
 		# LMB: Combo Chém 3 Nhịp
 		if Input.is_action_just_pressed("skill_lmb"):
 			_do_melee_combo()
-			return
-
-		# RMB: Block + Counter Stab
-		if Input.is_action_just_pressed("skill_rmb"):
-			_do_block_counter()
-			return
-
-		# Q: Tuyệt chiêu Xoay Kiếm 360
-		if Input.is_action_just_pressed("skill_q"):
-			_do_spin_attack()
-			return
-
-		# E: Phóng đạn 3D
-		if Input.is_action_just_pressed("skill_e"):
-			_do_ranged_throw()
 			return
 
 		# C / Jump: Nhảy
@@ -977,13 +1072,18 @@ func _physics_process(delta: float) -> void:
 		if input_dir.length_squared() > 0.01:
 			velocity.x = input_dir.x * RUN_SPEED
 			velocity.z = input_dir.z * RUN_SPEED
-			if visual_root:
+			if _combat_facing_lock_timer <= 0.0:
 				var target_yaw := atan2(input_dir.x, input_dir.z)
-				visual_root.rotation.y = lerp_angle(
-					visual_root.rotation.y,
+				_facing_angle = lerp_angle(
+					_facing_angle,
 					target_yaw,
 					minf(1.0, ROTATION_SPEED * delta)
 				)
+				if visual_root:
+					visual_root.rotation.y = _facing_angle
+			else:
+				if visual_root:
+					visual_root.rotation.y = _facing_angle
 			_play_anim(ANIM_RUN)
 		else:
 			# Dừng ngay lập tức khi thả tay khỏi phím
@@ -1034,6 +1134,13 @@ func _physics_process(delta: float) -> void:
 			_stuck_timer = 0.0
 	else:
 		_stuck_timer = 0.0
+
+	# Đảm bảo visual_root luôn khóa chặt theo _facing_angle khi combat facing lock còn hiệu lực
+	if visual_root and _combat_facing_lock_timer > 0.0:
+		visual_root.rotation.y = _facing_angle
+
+	# --- Đệm Chống Lún Tường / Tượng 8 Hướng (Task 21.4) ---
+	_apply_wall_micro_separation(delta)
 
 
 # ==============================================================================
@@ -1141,11 +1248,82 @@ func _check_dash_impact_against_enemies() -> void:
 
 
 # ==============================================================================
-# ACTIONS (TASK 19.4: FLUID COMBAT - 0% KHỰNG, 0% TRƯỢT CHÂN)
+# ACTIONS (TASK 19.4: FLUID COMBAT & DIRECTIVE 21: AIM-FACING SYNC & RMB CLEAVE)
 # ==============================================================================
 
-func _do_melee_combo() -> void:
-	_face_cursor()
+func _get_forward_dir() -> Vector3:
+	return Vector3(sin(_facing_angle), 0.0, cos(_facing_angle)).normalized()
+
+func _get_stable_aim_direction() -> Vector3:
+	var raw_cursor := _get_cursor_world_pos()
+	var diff := Vector3(raw_cursor.x - global_position.x, 0.0, raw_cursor.z - global_position.z)
+	if diff.length() < 0.42:
+		return _get_forward_dir()
+	return diff.normalized()
+
+func _snap_to_aim_direction(aim_dir: Vector3, lock_duration: float = 0.30) -> void:
+	if aim_dir.length_squared() > 0.001:
+		_facing_angle = atan2(aim_dir.x, aim_dir.z)
+		if visual_root != null:
+			visual_root.rotation.y = _facing_angle
+	_combat_facing_lock_timer = maxf(_combat_facing_lock_timer, lock_duration)
+
+func _compute_clamped_bomb_target(raw_cursor_pos: Vector3) -> Vector3:
+	var space_state := get_world_3d().direct_space_state
+	var flat_offset := Vector3(raw_cursor_pos.x - global_position.x, 0.0, raw_cursor_pos.z - global_position.z)
+	var dist := flat_offset.length()
+	if dist > MAX_E_THROW_RANGE:
+		flat_offset = flat_offset.normalized() * MAX_E_THROW_RANGE
+	elif dist < 0.5:
+		flat_offset = _get_forward_dir() * 1.5
+
+	var candidate_xz := global_position + flat_offset
+
+	# 1. Bắn tia ngang ở độ cao ngực (Y + 1.0m) để không ném xuyên qua tường biên
+	var wall_ray := PhysicsRayQueryParameters3D.create(
+		global_position + Vector3(0.0, 1.0, 0.0),
+		candidate_xz + Vector3(0.0, 1.0, 0.0),
+		1
+	)
+	wall_ray.exclude = [get_rid()]
+	var wall_hit := space_state.intersect_ray(wall_ray)
+	if not wall_hit.is_empty():
+		candidate_xz = wall_hit["position"] + wall_hit["normal"] * 0.6
+
+	# 2. Bắn tia từ trên cao xuống để bắt dính chính xác mặt sàn đa tầng
+	var floor_ray := PhysicsRayQueryParameters3D.create(
+		Vector3(candidate_xz.x, maxf(global_position.y, raw_cursor_pos.y) + 10.0, candidate_xz.z),
+		Vector3(candidate_xz.x, -2.0, candidate_xz.z),
+		1
+	)
+	floor_ray.exclude = [get_rid()]
+	var floor_hit := space_state.intersect_ray(floor_ray)
+	if not floor_hit.is_empty():
+		return floor_hit["position"] + Vector3(0.0, 0.05, 0.0)
+	return Vector3(candidate_xz.x, global_position.y, candidate_xz.z)
+
+func _apply_wall_micro_separation(_delta: float) -> void:
+	var space_state := get_world_3d().direct_space_state
+	var chest_origin := global_position + Vector3(0.0, 0.85, 0.0)
+	var min_safe_dist := 0.52
+	for i in range(8):
+		var angle := float(i) * (TAU / 8.0)
+		var dir := Vector3(cos(angle), 0.0, sin(angle))
+		var query := PhysicsRayQueryParameters3D.create(chest_origin, chest_origin + dir * min_safe_dist, 1)
+		query.exclude = [get_rid()]
+		var hit := space_state.intersect_ray(query)
+		if not hit.is_empty():
+			var normal: Vector3 = hit["normal"]
+			if absf(normal.y) < 0.35:
+				var hit_dist := Vector2(chest_origin.x - hit["position"].x, chest_origin.z - hit["position"].z).length()
+				if hit_dist < min_safe_dist:
+					var push_vec := Vector3(normal.x, 0.0, normal.z).normalized() * (min_safe_dist - hit_dist)
+					global_position += push_vec * 0.65
+
+func _do_melee_combo(aim_override: Vector3 = Vector3.ZERO) -> void:
+	var aim_dir := aim_override if aim_override.length_squared() > 0.001 else _get_stable_aim_direction()
+	_snap_to_aim_direction(aim_dir, 0.30)
+	var locked_attack_dir := Vector3(sin(_facing_angle), 0.0, cos(_facing_angle)).normalized()
 
 	var current_step := _combo_index
 	var anim_name: String = COMBO_SEQUENCE[_combo_index]
@@ -1153,57 +1331,91 @@ func _do_melee_combo() -> void:
 	if anim_player:
 		anim_player.speed_scale = 1.45
 
-	# Pha 1 + Pha 2 tổng thời gian khóa chỉ 0.24s (Cắt bỏ thu kiếm thừa, Task 19.4 Kỹ thuật A)
 	_action_lock_timer = 0.24
 	_start_sword_trail()
 
-	# Hiệu ứng Kiếm Khí Cung Trăng Đa Tầng 3 Nhịp Biến Hóa (Directive 20 Task 20.4)
-	var facing_yaw := visual_root.rotation.y if visual_root else rotation.y
 	var slash_pos := global_position + Vector3(0.0, 0.95, 0.0)
-	KayKitVFXManager.spawn_combo_slash_vfx(current_step, slash_pos, facing_yaw)
+	KayKitVFXManager.spawn_combo_slash_vfx(current_step, slash_pos, _facing_angle)
 
-	# Tính hướng bước tấn công (Attack Step-Lunge trong 0.14s)
-	var lunge_v := _get_raw_physical_movement_input()
-	if lunge_v.length_squared() > 0.01:
-		var cam := get_viewport().get_camera_3d()
-		var cam_right := Vector3.RIGHT
-		var cam_forward := Vector3.BACK
-		if cam != null:
-			cam_right = Vector3(cam.global_transform.basis.x.x, 0.0, cam.global_transform.basis.x.z).normalized()
-			cam_forward = Vector3(-cam.global_transform.basis.z.x, 0.0, -cam.global_transform.basis.z.z).normalized()
-		_lunge_dir = (cam_right * lunge_v.x + cam_forward * (-lunge_v.y)).normalized()
-	elif external_move_dir.length_squared() > 0.01:
-		_lunge_dir = external_move_dir.normalized()
-	elif visual_root:
-		_lunge_dir = Vector3(sin(visual_root.rotation.y), 0.0, cos(visual_root.rotation.y)).normalized()
-	else:
-		_lunge_dir = Vector3.FORWARD
-
+	_lunge_dir = locked_attack_dir
 	_lunge_timer = 0.14
 	_combo_index = (_combo_index + 1) % COMBO_SEQUENCE.size()
 	_combo_timer = COMBO_WINDOW + 0.24
 
-	# Gây sát thương cận chiến ngay lập tức (LMB 25.0 HP)
 	_apply_melee_hit_detection(MELEE_DAMAGE, MELEE_RANGE, false)
 
 
-func _do_block_counter() -> void:
-	_face_cursor()
-	_play_anim(ANIM_BLOCK)
+func _do_rmb_cross_cleave(aim_override: Vector3 = Vector3.ZERO) -> void:
+	if _cd_rmb_timer > 0.0:
+		return
+	_cd_rmb_timer = COOLDOWN_RMB
+
+	var aim_dir := aim_override if aim_override.length_squared() > 0.001 else _get_stable_aim_direction()
+	_snap_to_aim_direction(aim_dir, 0.35)
+	var locked_attack_dir := Vector3(sin(_facing_angle), 0.0, cos(_facing_angle)).normalized()
+
+	_play_anim(ANIM_ATTACK_SLICE_H)
 	if anim_player:
-		anim_player.speed_scale = 1.45
-	_action_lock_timer = 0.24
+		anim_player.speed_scale = 1.6
 
 	_start_sword_trail()
-	var facing_yaw := visual_root.rotation.y if visual_root else rotation.y
-	KayKitVFXManager.spawn_shield_bash_vfx(global_position, facing_yaw)
+	_sword_trail_timer = 0.4
 
-	_apply_melee_hit_detection(20.0, 2.5, false)
-	_knockback_nearby_enemies(2.5, 5.0)
+	_rmb_cleave_timer = 0.14
+	_rmb_cleave_dir = locked_attack_dir
+	_rmb_wave_spawned = false
+	_action_lock_timer = 0.32
+
+	# Phase 1: 25.0 DMG trong quạt 3.5m trước mặt
+	_apply_melee_hit_detection(25.0, 3.5, false)
+
+	# 4-layer VFX (Task 21.3)
+	KayKitVFXManager.spawn_rmb_solar_cross_cleave(global_position, _facing_angle, get_tree().current_scene)
 
 
-func _do_spin_attack() -> void:
-	_face_cursor()
+func _trigger_rmb_phase_two(fwd_dir: Vector3) -> void:
+	var hit_any := false
+	var enemies := get_tree().get_nodes_in_group("enemies")
+	var wave_origin := global_position
+	for enemy in enemies:
+		if not is_instance_valid(enemy) or not (enemy is Node3D):
+			continue
+		var e_node := enemy as Node3D
+		var diff := e_node.global_position - wave_origin
+		diff.y = 0.0
+		var forward_dist := fwd_dir.dot(diff)
+		if forward_dist >= 0.0 and forward_dist <= 5.2:
+			var perp_dist := (diff - fwd_dir * forward_dist).length()
+			if perp_dist <= 2.0 and absf(e_node.global_position.y - wave_origin.y) <= 2.0:
+				hit_any = true
+				if enemy.has_method("take_damage"):
+					enemy.take_damage(30.0, fwd_dir)
+				if enemy.has_method("apply_knockback"):
+					enemy.apply_knockback(fwd_dir * 11.0)
+				if enemy.has_method("apply_hit_stun"):
+					enemy.apply_hit_stun(0.65)
+				KayKitVFXManager.spawn_cross_slash_hit_impact(e_node.global_position + Vector3(0.0, 0.95, 0.0))
+
+	if hit_any:
+		var cam := get_viewport().get_camera_3d()
+		if cam != null and cam.has_method("add_screen_shake"):
+			cam.add_screen_shake(0.12)
+		elif cam != null and cam.has_method("add_shake"):
+			cam.add_shake(0.12)
+
+
+func _do_block_counter() -> void:
+	_do_rmb_cross_cleave()
+
+
+func _do_spin_attack(aim_override: Vector3 = Vector3.ZERO) -> void:
+	if _cd_q_timer > 0.0 or _is_spinning_q:
+		return
+	_cd_q_timer = COOLDOWN_Q
+
+	var aim_dir := aim_override if aim_override.length_squared() > 0.001 else _get_stable_aim_direction()
+	_snap_to_aim_direction(aim_dir, 0.45)
+
 	_play_anim(ANIM_SPIN)
 	if anim_player:
 		anim_player.speed_scale = 1.55
@@ -1221,8 +1433,20 @@ func _do_spin_attack() -> void:
 	_apply_melee_hit_detection(SPIN_DAMAGE, SPIN_RANGE, true)
 
 
-func _do_ranged_throw() -> void:
-	_face_cursor()
+func _do_ranged_throw(target_pos_override: Vector3 = Vector3.ZERO) -> void:
+	if _cd_e_timer > 0.0 or _is_throwing_e:
+		return
+	_cd_e_timer = COOLDOWN_E
+
+	var raw_cursor := target_pos_override if target_pos_override != Vector3.ZERO else _get_cursor_world_pos()
+	var aim_dir := _get_stable_aim_direction()
+	if target_pos_override != Vector3.ZERO:
+		var d := target_pos_override - global_position
+		d.y = 0.0
+		if d.length_squared() > 0.01:
+			aim_dir = d.normalized()
+	_snap_to_aim_direction(aim_dir, 0.25)
+
 	_play_anim(ANIM_THROW)
 	if anim_player:
 		anim_player.speed_scale = 1.75
@@ -1230,19 +1454,13 @@ func _do_ranged_throw() -> void:
 	_throw_timer = 0.18
 	_action_lock_timer = 0.18
 
-	var target_pos := _get_cursor_world_pos()
+	var target_pos := _compute_clamped_bomb_target(raw_cursor)
 	var start_pos := global_position + Vector3(0.0, 1.2, 0.0)
 
-	# Ám Ảnh Lôi Vụ 4 tầng (Directive 20 Task 20.4 Chiêu E)
-	KayKitVFXManager.spawn_smoke_bomb_3d(
+	# Ám Ảnh Lôi Vụ 4 tầng & Vùng Khói Lôi Vụ Hazard Zone (Task 21.1)
+	KayKitVFXManager.spawn_smoke_bomb_hazard_zone(
 		get_tree().current_scene, start_pos, target_pos
 	)
-
-	# Làm chậm 60% tốc độ và ngắt đòn đánh của Bot trong bán kính 4.0m (Task 19.4 Kỹ thuật B)
-	for enemy in get_tree().get_nodes_in_group("enemies"):
-		if is_instance_valid(enemy) and (enemy as Node3D).global_position.distance_to(target_pos) <= 4.0:
-			if enemy.has_method("apply_smoke_slow"):
-				enemy.apply_smoke_slow(0.60, 2.5)
 
 
 func _do_dodge() -> void:
@@ -6147,6 +6365,7 @@ extends Camera3D
 
 var shake_intensity: float = 0.0
 var shake_decay: float = 5.0
+var _faded_meshes: Array[MeshInstance3D] = []
 
 func _ready() -> void:
 	add_to_group("camera")
@@ -6186,6 +6405,59 @@ func _physics_process(delta: float) -> void:
 		desired_pos += shake_offset
 		
 	global_position = global_position.lerp(desired_pos, follow_speed * delta)
+	_update_occlusion_fade()
+
+func _update_occlusion_fade() -> void:
+	if not is_instance_valid(target_node):
+		_restore_faded_meshes()
+		return
+
+	var target_chest: Vector3 = target_node.global_position + Vector3(0.0, 1.0, 0.0)
+	var cam_pos: Vector3 = global_position
+	var diff: Vector3 = target_chest - cam_pos
+	var dist := diff.length()
+	if dist < 0.5:
+		_restore_faded_meshes()
+		return
+
+	var space_state := get_world_3d().direct_space_state
+	var query := PhysicsRayQueryParameters3D.create(cam_pos, target_chest, 1)
+	if target_node is CollisionObject3D:
+		query.exclude = [(target_node as CollisionObject3D).get_rid()]
+
+	var hit := space_state.intersect_ray(query)
+	var new_faded: Array[MeshInstance3D] = []
+
+	if not hit.is_empty():
+		var hit_pos: Vector3 = hit["position"]
+		if hit_pos.distance_to(target_chest) > 0.4:
+			var collider = hit["collider"]
+			if collider is Node:
+				var node := collider as Node
+				var meshes: Array[Node] = []
+				if node is MeshInstance3D:
+					meshes.append(node)
+				meshes.append_array(node.find_children("*", "MeshInstance3D", true, false))
+				if node.get_parent() != null and node.get_parent() != get_tree().current_scene:
+					meshes.append_array(node.get_parent().find_children("*", "MeshInstance3D", true, false))
+
+				for m in meshes:
+					var mi := m as MeshInstance3D
+					if is_instance_valid(mi) and not new_faded.has(mi):
+						new_faded.append(mi)
+						mi.transparency = 0.65
+
+	for old_m in _faded_meshes:
+		if is_instance_valid(old_m) and not new_faded.has(old_m):
+			old_m.transparency = 0.0
+
+	_faded_meshes = new_faded
+
+func _restore_faded_meshes() -> void:
+	for m in _faded_meshes:
+		if is_instance_valid(m):
+			m.transparency = 0.0
+	_faded_meshes.clear()
 
 func add_screen_shake(amount: float) -> void:
 	shake_intensity = clamp(shake_intensity + amount, 0.0, 1.5)
@@ -6283,1107 +6555,6 @@ static func verify_all_exist() -> bool:
 			push_error("[KayKitAssetRegistry] Missing asset: %s at %s" % [key, path])
 			all_ok = false
 	return all_ok
-
-```
-
-## 📄 File: src_game/scripts/core/kaykit_vfx_manager.gd
-```gdscript
-class_name KayKitVFXManager
-extends Node3D
-
-# ==============================================================================
-# KAYKIT VFX MANAGER — DIRECTIVE 20 (PHASE 20 OVERHAUL)
-# Hệ thống VFX Kiếm Khí Đa Tầng 3D & Kỹ Xảo Chiêu Thức Chuẩn Studio
-# TUYỆT ĐỐI 0% PRIMITIVE MESH — 100% ArrayMesh (ZERO PRIMITIVE MESHES GUARANTEED)
-# Phục vụ 6 chiêu thức HeroKnight3D & Đòn đánh kẻ địch
-# ==============================================================================
-
-const TEX_DIR := "res://assets/vfx_textures/"
-const SLASH_SHADER_PATH := "res://shaders/vfx_stylized_slash.gdshader"
-
-# Texture paths
-const TEX_SLASH_01 := "res://assets/vfx_textures/slash_01.png"
-const TEX_SLASH_02 := "res://assets/vfx_textures/slash_02.png"
-const TEX_SLASH_04 := "res://assets/vfx_textures/slash_04.png"
-const TEX_SPARK_01 := "res://assets/vfx_textures/spark_01.png"
-const TEX_SPARK_02 := "res://assets/vfx_textures/spark_02.png"
-const TEX_SPARK_03 := "res://assets/vfx_textures/spark_03.png"
-const TEX_SPARK_05 := "res://assets/vfx_textures/spark_05.png"
-const TEX_SPARK_06 := "res://assets/vfx_textures/spark_06.png"
-const TEX_FLAME_02 := "res://assets/vfx_textures/flame_02.png"
-const TEX_FLAME_04 := "res://assets/vfx_textures/flame_04.png"
-const TEX_SMOKE_04 := "res://assets/vfx_textures/smoke_04.png"
-const TEX_SMOKE_07 := "res://assets/vfx_textures/smoke_07.png"
-const TEX_STAR_04 := "res://assets/vfx_textures/star_04.png"
-const TEX_STAR_08 := "res://assets/vfx_textures/star_08.png"
-const TEX_CIRCLE_01 := "res://assets/vfx_textures/circle_01.png"
-const TEX_CIRCLE_02 := "res://assets/vfx_textures/circle_02.png"
-const TEX_CIRCLE_03 := "res://assets/vfx_textures/circle_03.png"
-const TEX_CIRCLE_04 := "res://assets/vfx_textures/circle_04.png"
-const TEX_CIRCLE_05 := "res://assets/vfx_textures/circle_05.png"
-const TEX_SCORCH_02 := "res://assets/vfx_textures/scorch_02.png"
-const TEX_TWIRL_01 := "res://assets/vfx_textures/twirl_01.png"
-const TEX_TWIRL_02 := "res://assets/vfx_textures/twirl_02.png"
-const TEX_TWIRL_03 := "res://assets/vfx_textures/twirl_03.png"
-const TEX_MAGIC_03 := "res://assets/vfx_textures/magic_03.png"
-const TEX_LIGHT_02 := "res://assets/vfx_textures/light_02.png"
-
-static var _cached_slash_shader: Shader = null
-static var _tex_cache: Dictionary = {}
-
-static func _get_root_parent(parent_node: Node = null) -> Node:
-	if is_instance_valid(parent_node):
-		return parent_node
-	var tree := Engine.get_main_loop() as SceneTree
-	if tree != null:
-		if tree.current_scene != null:
-			return tree.current_scene
-		return tree.root
-	return null
-
-static func _get_tex(file_name: String) -> Texture2D:
-	if _tex_cache.has(file_name):
-		return _tex_cache[file_name]
-	var full_path := file_name if file_name.begins_with("res://") else (TEX_DIR + file_name)
-	if ResourceLoader.exists(full_path):
-		var t := load(full_path) as Texture2D
-		_tex_cache[file_name] = t
-		return t
-	return null
-
-static func _get_slash_shader() -> Shader:
-	if _cached_slash_shader == null and ResourceLoader.exists(SLASH_SHADER_PATH):
-		_cached_slash_shader = load(SLASH_SHADER_PATH) as Shader
-	return _cached_slash_shader
-
-# ==============================================================================
-# 0. LÕI HÌNH HỌC AN TOÀN (ZERO PRIMITIVE MESHES)
-# ==============================================================================
-
-## Tạo lưới phẳng 2 tam giác bằng ArrayMesh (mesh is PrimitiveMesh == FALSE 100%)
-static func get_safe_particle_quad_mesh(size: Vector2 = Vector2(1.0, 1.0)) -> ArrayMesh:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var hw := size.x * 0.5
-	var hh := size.y * 0.5
-	st.set_uv(Vector2(0.0, 0.0)); st.add_vertex(Vector3(-hw,  hh, 0.0))
-	st.set_uv(Vector2(1.0, 0.0)); st.add_vertex(Vector3( hw,  hh, 0.0))
-	st.set_uv(Vector2(1.0, 1.0)); st.add_vertex(Vector3( hw, -hh, 0.0))
-
-	st.set_uv(Vector2(0.0, 0.0)); st.add_vertex(Vector3(-hw,  hh, 0.0))
-	st.set_uv(Vector2(1.0, 1.0)); st.add_vertex(Vector3( hw, -hh, 0.0))
-	st.set_uv(Vector2(0.0, 1.0)); st.add_vertex(Vector3(-hw, -hh, 0.0))
-	return st.commit()
-
-## Tạo Dải Lưới Cung Trăng Uốn Cong 3D bằng ArrayMesh (Procedural Curved Crescent Slash Arc ArrayMesh)
-static func build_curved_slash_arc_mesh(
-	inner_radius: float = 0.85,
-	outer_radius: float = 2.55,
-	arc_angle_deg: float = 155.0,
-	segments: int = 28,
-	vertical_arch: float = 0.12
-) -> ArrayMesh:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var total_rad := deg_to_rad(arc_angle_deg)
-	var start_rad := -total_rad * 0.5
-
-	for i in range(segments):
-		var t0 := float(i) / float(segments)
-		var t1 := float(i + 1) / float(segments)
-		var a0 := start_rad + t0 * total_rad
-		var a1 := start_rad + t1 * total_rad
-
-		# Độ mở rộng hình lưỡi liềm: Thuôn nhọn ở 2 đầu (0.0 và 1.0), phình to sắc lẹm ở giữa cung
-		var width_scale0 := sin(t0 * PI)
-		var width_scale1 := sin(t1 * PI)
-		var cur_in0 := lerpf(outer_radius * 0.92, inner_radius, width_scale0)
-		var cur_in1 := lerpf(outer_radius * 0.92, inner_radius, width_scale1)
-
-		var y_arch0 := sin(t0 * PI) * vertical_arch
-		var y_arch1 := sin(t1 * PI) * vertical_arch
-
-		var p0_in := Vector3(sin(a0) * cur_in0, y_arch0, cos(a0) * cur_in0)
-		var p0_out := Vector3(sin(a0) * outer_radius, y_arch0 * 0.5, cos(a0) * outer_radius)
-		var p1_in := Vector3(sin(a1) * cur_in1, y_arch1, cos(a1) * cur_in1)
-		var p1_out := Vector3(sin(a1) * outer_radius, y_arch1 * 0.5, cos(a1) * outer_radius)
-
-		# Tam giác 1
-		st.set_uv(Vector2(t0, 0.0)); st.add_vertex(p0_in)
-		st.set_uv(Vector2(t0, 1.0)); st.add_vertex(p0_out)
-		st.set_uv(Vector2(t1, 1.0)); st.add_vertex(p1_out)
-		# Tam giác 2
-		st.set_uv(Vector2(t0, 0.0)); st.add_vertex(p0_in)
-		st.set_uv(Vector2(t1, 1.0)); st.add_vertex(p1_out)
-		st.set_uv(Vector2(t1, 0.0)); st.add_vertex(p1_in)
-
-	return st.commit()
-
-## Helper tạo StandardMaterial3D cho hạt hạt Additive (100% trong suốt nền đen)
-static func _create_additive_particle_mat(tex: Texture2D, tint: Color) -> StandardMaterial3D:
-	var mat := StandardMaterial3D.new()
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	mat.vertex_color_use_as_albedo = true
-	mat.albedo_color = tint
-	mat.albedo_texture = tex
-	return mat
-
-## Helper tạo ParticleProcessMaterial
-static func _create_particle_process_mat(
-	direction: Vector3,
-	spread: float,
-	initial_velocity_min: float,
-	initial_velocity_max: float,
-	gravity: Vector3 = Vector3.ZERO,
-	scale_min: float = 0.05,
-	scale_max: float = 0.12
-) -> ParticleProcessMaterial:
-	var pmat := ParticleProcessMaterial.new()
-	pmat.direction = direction
-	pmat.spread = spread
-	pmat.initial_velocity_min = initial_velocity_min
-	pmat.initial_velocity_max = initial_velocity_max
-	pmat.gravity = gravity
-	pmat.scale_min = scale_min
-	pmat.scale_max = scale_max
-	pmat.damping_min = 2.0
-	pmat.damping_max = 5.0
-	return pmat
-
-# ==============================================================================
-# 1. HIỆU ỨNG CỐT LÕI: TRIỆU HỒI VỆT CHÉM CUNG TRĂNG ĐA TẦNG (Task 20.3)
-# ==============================================================================
-
-static func spawn_stylized_crescent_slash(
-	origin_pos: Vector3,
-	forward_yaw: float,
-	tilt_roll_deg: float = 0.0,
-	reverse_swing: bool = false,
-	core_col: Color = Color(1.0, 1.0, 1.0, 1.0),
-	main_col: Color = Color(0.0, 0.85, 1.0, 1.0),
-	edge_col: Color = Color(1.0, 0.45, 0.05, 1.0),
-	scale_mult: float = 1.0,
-	duration: float = 0.24,
-	parent_node: Node = null
-) -> Node3D:
-	var p := _get_root_parent(parent_node)
-	if p == null:
-		return null
-
-	var slash_root := Node3D.new()
-	slash_root.name = "StylizedSlashArcFX"
-	p.add_child(slash_root)
-	slash_root.global_position = origin_pos
-	slash_root.rotation.y = forward_yaw
-
-	# Pivot nghiêng mặt phẳng chém (Ngang 0 độ, Chéo 32 độ, Bổ dọc 85 độ)
-	var tilt_pivot := Node3D.new()
-	tilt_pivot.name = "TiltPivot"
-	slash_root.add_child(tilt_pivot)
-	tilt_pivot.rotation.z = deg_to_rad(tilt_roll_deg)
-	if reverse_swing:
-		tilt_pivot.scale.x = -1.0
-
-	# LỚP 1 & 2: Lưới Cung Trăng ArrayMesh + Shader 3 Tầng Màu
-	var arc_mesh_inst := MeshInstance3D.new()
-	arc_mesh_inst.name = "MainArcMesh"
-	arc_mesh_inst.mesh = build_curved_slash_arc_mesh(0.75 * scale_mult, 2.65 * scale_mult, 160.0, 28, 0.10)
-	arc_mesh_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-
-	var smat := ShaderMaterial.new()
-	smat.shader = _get_slash_shader()
-	smat.set_shader_parameter("slash_mask_tex", _get_tex("slash_01.png"))
-	smat.set_shader_parameter("core_color", core_col)
-	smat.set_shader_parameter("main_color", main_col)
-	smat.set_shader_parameter("edge_color", edge_col)
-	smat.set_shader_parameter("emission_boost", 4.2)
-	smat.set_shader_parameter("progress", 0.05)
-	arc_mesh_inst.material_override = smat
-	tilt_pivot.add_child(arc_mesh_inst)
-
-	# LỚP 3: Dải Phụ Bóng Mờ Năng Lượng (Secondary After-Glow Arc)
-	var sub_arc := MeshInstance3D.new()
-	sub_arc.name = "SubArcMesh"
-	sub_arc.mesh = build_curved_slash_arc_mesh(0.55 * scale_mult, 2.20 * scale_mult, 140.0, 20, -0.06)
-	sub_arc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var sub_mat := smat.duplicate() as ShaderMaterial
-	sub_mat.set_shader_parameter("emission_boost", 2.4)
-	sub_mat.set_shader_parameter("streak_frequency", 28.0)
-	sub_arc.material_override = sub_mat
-	sub_arc.rotation.y = deg_to_rad(-12.0)
-	tilt_pivot.add_child(sub_arc)
-
-	# LỚP 4: Chùm Hạt Tia Lửa Bay Theo Cung Kiếm (Velocity-Stretched Sparks)
-	_spawn_slash_sparks_burst(tilt_pivot, main_col, edge_col, scale_mult)
-
-	# LỚP 5: Chớp Sáng Không Gian (Dynamic Combat Light Flash)
-	var flash_light := OmniLight3D.new()
-	flash_light.name = "SlashFlashLight"
-	flash_light.light_color = main_col.lerp(edge_col, 0.35)
-	flash_light.light_energy = 3.2
-	flash_light.omni_range = 4.8 * scale_mult
-	slash_root.add_child(flash_light)
-
-	# Diễn hoạt quét cung kiếm mượt mà bằng Tween
-	var tw := slash_root.create_tween().set_parallel(true)
-	tw.tween_method(func(v: float):
-		if is_instance_valid(smat):
-			smat.set_shader_parameter("progress", v)
-		if is_instance_valid(sub_mat):
-			sub_mat.set_shader_parameter("progress", clampf(v - 0.08, 0.0, 1.0))
-	, 0.05, 1.0, duration)
-	tw.tween_property(tilt_pivot, "rotation:y", deg_to_rad(28.0), duration).from(deg_to_rad(-18.0))
-	tw.tween_property(flash_light, "light_energy", 0.0, duration)
-	tw.chain().tween_callback(slash_root.queue_free)
-
-	return slash_root
-
-static func _spawn_slash_sparks_burst(parent_node: Node3D, col_a: Color, col_b: Color, scale_mult: float) -> void:
-	var sparks := GPUParticles3D.new()
-	sparks.name = "SlashSparks"
-	sparks.amount = 22
-	sparks.lifetime = 0.26
-	sparks.one_shot = true
-	sparks.explosiveness = 0.88
-	sparks.local_coords = false
-
-	var pmat := ParticleProcessMaterial.new()
-	pmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
-	pmat.emission_ring_axis = Vector3(0, 1, 0)
-	pmat.emission_ring_radius = 1.9 * scale_mult
-	pmat.emission_ring_inner_radius = 1.2 * scale_mult
-	pmat.emission_ring_height = 0.15
-	pmat.direction = Vector3(0, 0.2, 1)
-	pmat.spread = 65.0
-	pmat.initial_velocity_min = 4.5
-	pmat.initial_velocity_max = 9.5
-	pmat.gravity = Vector3(0, -4.0, 0)
-	pmat.damping_min = 6.0
-	pmat.damping_max = 12.0
-	pmat.scale_min = 0.22
-	pmat.scale_max = 0.48
-
-	var grad := Gradient.new()
-	grad.set_color(0, Color(col_a.r * 2.0, col_a.g * 2.0, col_a.b * 2.0, 1.0))
-	grad.set_color(1, Color(col_b.r, col_b.g, col_b.b, 0.0))
-	var grad_tex := GradientTexture1D.new()
-	grad_tex.gradient = grad
-	pmat.color_ramp = grad_tex
-	sparks.process_material = pmat
-
-	var draw_mat := StandardMaterial3D.new()
-	draw_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	draw_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	draw_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	draw_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	draw_mat.vertex_color_use_as_albedo = true
-	draw_mat.albedo_texture = _get_tex("spark_02.png")
-
-	var quad_mesh := get_safe_particle_quad_mesh(Vector2(0.55, 0.55))
-	quad_mesh.surface_set_material(0, draw_mat)
-	sparks.draw_pass_1 = quad_mesh
-
-	parent_node.add_child(sparks)
-	sparks.emitting = true
-
-# ==============================================================================
-# 2. TOÀN BỘ 6 CHIÊU THỨC HERO KNIGHT 3D (Task 20.4)
-# ==============================================================================
-
-## Chiêu 1: Đánh thường LMB Combo 3 Nhịp Biến Hóa
-static func spawn_combo_slash_vfx(
-	combo_step: int,
-	origin: Vector3,
-	yaw: float,
-	parent_node: Node = null
-) -> void:
-	match combo_step:
-		0:
-			# Nhịp 1: Slice_Horizontal — Hàn Băng Lưu Quang Trảm
-			spawn_stylized_crescent_slash(
-				origin,
-				yaw,
-				4.0,     # tilt_roll_deg
-				false,   # reverse_swing
-				Color(1.0, 1.0, 1.0, 1.0), # Lõi Trắng HDR
-				Color(0.0, 0.85, 1.0, 1.0), # Thân Xanh Băng Điện Tử (#00D8FF)
-				Color(1.0, 0.45, 0.0, 1.0), # Viền Cam Lửa (#FF7300)
-				1.0,
-				0.24,
-				parent_node
-			)
-		1:
-			# Nhịp 2: Slice_Diagonal — Song Nha Nghịch Phong Trảm
-			spawn_stylized_crescent_slash(
-				origin,
-				yaw,
-				-32.0,   # tilt_roll_deg chém chéo
-				true,    # reverse_swing từ trái qua phải
-				Color(1.0, 1.0, 1.0, 1.0),
-				Color(0.0, 0.85, 1.0, 1.0),
-				Color(1.0, 0.45, 0.0, 1.0),
-				1.05,
-				0.24,
-				parent_node
-			)
-			# Sau 0.05s sinh thêm vệt chém phụ góc +18.0 tạo Song Kiếm Giao Hoa
-			var tree := Engine.get_main_loop() as SceneTree
-			if tree != null:
-				var t := tree.create_timer(0.05)
-				t.timeout.connect(func():
-					spawn_stylized_crescent_slash(
-						origin,
-						yaw,
-						18.0,
-						false,
-						Color(1.0, 1.0, 1.0, 1.0),
-						Color(0.2, 0.9, 1.0, 1.0),
-						Color(1.0, 0.6, 0.1, 1.0),
-						0.92,
-						0.20,
-						parent_node
-					)
-				)
-		2, _:
-			# Nhịp 3: Chop — Liệt Hỏa Phá Thạch Trảm (Bổ Dọc Uy Lực Lớn)
-			spawn_stylized_crescent_slash(
-				origin,
-				yaw,
-				85.0,    # tilt_roll_deg bổ thẳng đứng
-				false,
-				Color(1.0, 0.97, 0.84, 1.0), # Lõi Vàng Trắng (#FFF8D6)
-				Color(1.0, 0.23, 0.0, 1.0),  # Thân Đỏ Hoàng Kim (#FF3B00)
-				Color(0.72, 0.0, 1.0, 1.0),  # Viền Tím Sẫm (#B800FF)
-				1.28,
-				0.30,
-				parent_node
-			)
-			# Vụ Nổ Địa Chấn Kép dưới sàn
-			var forward_vec := Vector3(sin(yaw), 0.0, cos(yaw)).normalized()
-			var impact_pos := origin + forward_vec * 1.65
-			impact_pos.y = origin.y - 0.90
-			_spawn_earth_shatter_burst(impact_pos, parent_node)
-
-## Vụ nổ địa chấn kép cho Nhịp 3 LMB
-static func _spawn_earth_shatter_burst(ground_pos: Vector3, parent_node: Node = null) -> void:
-	var p := _get_root_parent(parent_node)
-	if p == null:
-		return
-
-	# Decal 1: scorch_02.png dung nham đỏ cam nở từ 0.5m -> 3.6m
-	var d1 := Decal.new()
-	d1.name = "EarthShatterDecal"
-	d1.size = Vector3(1.0, 3.0, 1.0)
-	d1.texture_albedo = _get_tex("scorch_02.png")
-	d1.modulate = Color(1.0, 0.35, 0.05, 0.95)
-	p.add_child(d1)
-	d1.global_position = ground_pos + Vector3(0.0, 0.12, 0.0)
-
-	# Decal 2: circle_02.png sóng xung kích vàng rực nở nhanh ra 4.2m
-	var d2 := Decal.new()
-	d2.name = "ShockwaveRingDecal"
-	d2.size = Vector3(1.2, 3.0, 1.2)
-	d2.texture_albedo = _get_tex("circle_02.png")
-	d2.modulate = Color(1.0, 0.85, 0.2, 0.9)
-	p.add_child(d2)
-	d2.global_position = ground_pos + Vector3(0.0, 0.15, 0.0)
-
-	var tw := d1.create_tween().set_parallel(true)
-	tw.tween_property(d1, "size", Vector3(3.6, 3.0, 3.6), 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_property(d2, "size", Vector3(4.2, 3.0, 4.2), 0.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.chain().tween_property(d1, "modulate:a", 0.0, 0.55)
-	tw.parallel().tween_property(d2, "modulate:a", 0.0, 0.35)
-	tw.chain().tween_callback(d1.queue_free)
-	tw.parallel().tween_callback(d2.queue_free)
-
-	# Cột hạt tia lửa flame_04 + spark_05 bắn tung tóe lên trời
-	var fire_burst := GPUParticles3D.new()
-	fire_burst.name = "EarthFirePillar"
-	fire_burst.amount = 26
-	fire_burst.lifetime = 0.45
-	fire_burst.one_shot = true
-	fire_burst.explosiveness = 0.92
-	fire_burst.local_coords = false
-
-	var pmat := ParticleProcessMaterial.new()
-	pmat.direction = Vector3(0, 1, 0)
-	pmat.spread = 45.0
-	pmat.initial_velocity_min = 6.0
-	pmat.initial_velocity_max = 12.0
-	pmat.gravity = Vector3(0, -7.0, 0)
-	pmat.damping_min = 3.0
-	pmat.damping_max = 8.0
-	pmat.scale_min = 0.35
-	pmat.scale_max = 0.75
-	fire_burst.process_material = pmat
-
-	var draw_mat := _create_additive_particle_mat(_get_tex("flame_04.png"), Color(1.0, 0.6, 0.1, 1.0))
-	var qmesh := get_safe_particle_quad_mesh(Vector2(0.65, 0.65))
-	qmesh.surface_set_material(0, draw_mat)
-	fire_burst.draw_pass_1 = qmesh
-
-	p.add_child(fire_burst)
-	fire_burst.global_position = ground_pos + Vector3(0.0, 0.25, 0.0)
-	fire_burst.emitting = true
-	fire_burst.finished.connect(fire_burst.queue_free)
-
-## Chiêu 2: Khiên Phản Kích RMB — Thánh Khiên Ấn Chú & Mũi Giáo Xoáy
-static func spawn_shield_bash_vfx(
-	origin: Vector3,
-	yaw: float,
-	parent_node: Node = null
-) -> void:
-	var p := _get_root_parent(parent_node)
-	if p == null:
-		return
-
-	var forward_vec := Vector3(sin(yaw), 0.0, cos(yaw)).normalized()
-	var shield_pos := origin + forward_vec * 0.85 + Vector3(0.0, 0.95, 0.0)
-
-	# 1. Ấn Chú Thánh Khiên Dựng Đứng (Sprite3D xoay tròn và phóng to 0.4m -> 1.8m)
-	var shield_sprite := Sprite3D.new()
-	shield_sprite.name = "HolyShieldRune"
-	shield_sprite.texture = _get_tex("circle_01.png")
-	shield_sprite.modulate = Color(2.6, 1.9, 0.4, 1.0) # Vàng Hoàng Kim HDR
-	shield_sprite.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-	shield_sprite.no_depth_test = true
-	shield_sprite.render_priority = 8
-	shield_sprite.pixel_size = 0.003
-	shield_sprite.scale = Vector3(0.4, 0.4, 0.4)
-	p.add_child(shield_sprite)
-	shield_sprite.global_position = shield_pos
-	shield_sprite.rotation.y = yaw
-
-	var tw := shield_sprite.create_tween().set_parallel(true)
-	tw.tween_property(shield_sprite, "scale", Vector3(1.8, 1.8, 1.8), 0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_property(shield_sprite, "rotation:z", PI * 2.0, 0.25)
-	tw.chain().tween_property(shield_sprite, "modulate:a", 0.0, 0.15)
-	tw.chain().tween_callback(shield_sprite.queue_free)
-
-	# 2. Luồng Xung Kích Đâm Xuyên (twirl_01 + spark_03)
-	var drill_sparks := GPUParticles3D.new()
-	drill_sparks.name = "ShieldDrillSparks"
-	drill_sparks.amount = 20
-	drill_sparks.lifetime = 0.28
-	drill_sparks.one_shot = true
-	drill_sparks.explosiveness = 0.85
-	drill_sparks.local_coords = false
-
-	var pmat := ParticleProcessMaterial.new()
-	pmat.direction = forward_vec
-	pmat.spread = 22.0
-	pmat.initial_velocity_min = 7.5
-	pmat.initial_velocity_max = 14.0
-	pmat.gravity = Vector3.ZERO
-	pmat.damping_min = 5.0
-	pmat.damping_max = 10.0
-	pmat.scale_min = 0.35
-	pmat.scale_max = 0.65
-	drill_sparks.process_material = pmat
-
-	var draw_mat := _create_additive_particle_mat(_get_tex("spark_03.png"), Color(1.0, 0.85, 0.3, 1.0))
-	var qmesh := get_safe_particle_quad_mesh(Vector2(0.45, 0.45))
-	qmesh.surface_set_material(0, draw_mat)
-	drill_sparks.draw_pass_1 = qmesh
-
-	p.add_child(drill_sparks)
-	drill_sparks.global_position = shield_pos
-	drill_sparks.emitting = true
-	drill_sparks.finished.connect(drill_sparks.queue_free)
-
-	# Vòng sóng xung kích Decal dưới sàn
-	spawn_ground_decal_shockwave(p, origin, 2.5, Color(0.3, 0.7, 1.0, 0.8))
-
-## Chiêu 3: Tuyệt chiêu Q — Song Long Lốc Xoáy 360° (Task 20.4 Chiêu Q)
-static func spawn_whirlwind_360_vfx(
-	hero_node: Node3D,
-	parent_node: Node = null
-) -> void:
-	if not is_instance_valid(hero_node):
-		return
-	var p := _get_root_parent(parent_node)
-	if p == null:
-		return
-
-	var vortex_root := Node3D.new()
-	vortex_root.name = "WhirlwindVortexFX"
-	hero_node.add_child(vortex_root)
-	vortex_root.position = Vector3(0.0, 0.85, 0.0)
-
-	# --- VÒNG 1: Xanh Băng Điện Tử – Lõi Trắng – Viền Cam (Nghiêng +14 độ) ---
-	var ring1_pivot := Node3D.new()
-	ring1_pivot.name = "WhirlwindRing1Pivot"
-	ring1_pivot.rotation.x = deg_to_rad(14.0)
-	vortex_root.add_child(ring1_pivot)
-
-	var ring1_mesh := MeshInstance3D.new()
-	ring1_mesh.name = "WhirlwindArc1"
-	ring1_mesh.mesh = build_curved_slash_arc_mesh(1.1, 3.1, 340.0, 36, 0.25)
-	ring1_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-
-	var smat1 := ShaderMaterial.new()
-	smat1.shader = _get_slash_shader()
-	smat1.set_shader_parameter("slash_mask_tex", _get_tex("slash_01.png"))
-	smat1.set_shader_parameter("core_color", Color(1.0, 1.0, 1.0, 1.0))
-	smat1.set_shader_parameter("main_color", Color(0.0, 0.85, 1.0, 1.0)) # Xanh Băng Cyan
-	smat1.set_shader_parameter("edge_color", Color(1.0, 0.45, 0.05, 1.0)) # Viền Cam Lửa
-	smat1.set_shader_parameter("emission_boost", 4.2)
-	smat1.set_shader_parameter("progress", 0.1)
-	ring1_mesh.material_override = smat1
-	ring1_pivot.add_child(ring1_mesh)
-
-	# --- VÒNG 2: Cam Lửa Hoàng Kim – Lõi Trắng – Viền Đỏ (Nghiêng -14 độ, lệch pha 180 độ) ---
-	var ring2_pivot := Node3D.new()
-	ring2_pivot.name = "WhirlwindRing2Pivot"
-	ring2_pivot.rotation.x = deg_to_rad(-14.0)
-	ring2_pivot.rotation.y = PI # Lệch pha 180 độ
-	vortex_root.add_child(ring2_pivot)
-
-	var ring2_mesh := MeshInstance3D.new()
-	ring2_mesh.name = "WhirlwindArc2"
-	ring2_mesh.mesh = build_curved_slash_arc_mesh(1.1, 3.1, 340.0, 36, -0.25)
-	ring2_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-
-	var smat2 := ShaderMaterial.new()
-	smat2.shader = _get_slash_shader()
-	smat2.set_shader_parameter("slash_mask_tex", _get_tex("slash_01.png"))
-	smat2.set_shader_parameter("core_color", Color(1.0, 0.96, 0.84, 1.0))
-	smat2.set_shader_parameter("main_color", Color(1.0, 0.53, 0.0, 1.0)) # Cam Lửa Hoàng Kim
-	smat2.set_shader_parameter("edge_color", Color(0.90, 0.12, 0.16, 1.0)) # Viền Đỏ Huyết
-	smat2.set_shader_parameter("emission_boost", 4.2)
-	smat2.set_shader_parameter("progress", 0.1)
-	ring2_mesh.material_override = smat2
-	ring2_pivot.add_child(ring2_mesh)
-
-	# --- Trận Pháp Kép Dưới Chân (circle_05 Xanh Cyan & twirl_03 Vàng Cam) ---
-	var decal1 := Decal.new()
-	decal1.name = "WhirlwindDecal1"
-	decal1.position = Vector3(0.0, -0.75, 0.0)
-	decal1.size = Vector3(5.8, 2.5, 5.8)
-	decal1.texture_albedo = _get_tex("circle_05.png")
-	decal1.modulate = Color(0.0, 0.8, 1.0, 0.8)
-	vortex_root.add_child(decal1)
-
-	var decal2 := Decal.new()
-	decal2.name = "WhirlwindDecal2"
-	decal2.position = Vector3(0.0, -0.72, 0.0)
-	decal2.size = Vector3(5.2, 2.5, 5.2)
-	decal2.texture_albedo = _get_tex("twirl_03.png")
-	decal2.modulate = Color(1.0, 0.6, 0.1, 0.8)
-	vortex_root.add_child(decal2)
-
-	# Luồng hạt tia lửa xoáy từ chân lên đầu (spark_01)
-	var vortex_sparks := GPUParticles3D.new()
-	vortex_sparks.name = "WhirlwindSparks"
-	vortex_sparks.amount = 30
-	vortex_sparks.lifetime = 0.35
-	vortex_sparks.local_coords = false
-
-	var pmat := ParticleProcessMaterial.new()
-	pmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
-	pmat.emission_ring_axis = Vector3(0, 1, 0)
-	pmat.emission_ring_radius = 2.4
-	pmat.emission_ring_inner_radius = 1.0
-	pmat.direction = Vector3(0, 1, 0)
-	pmat.spread = 35.0
-	pmat.initial_velocity_min = 3.5
-	pmat.initial_velocity_max = 7.0
-	pmat.gravity = Vector3(0, 2.0, 0)
-	pmat.scale_min = 0.25
-	pmat.scale_max = 0.55
-	vortex_sparks.process_material = pmat
-
-	var draw_mat := _create_additive_particle_mat(_get_tex("spark_01.png"), Color(1.0, 0.8, 0.3, 1.0))
-	var qmesh := get_safe_particle_quad_mesh(Vector2(0.45, 0.45))
-	qmesh.surface_set_material(0, draw_mat)
-	vortex_sparks.draw_pass_1 = qmesh
-	vortex_root.add_child(vortex_sparks)
-	vortex_sparks.emitting = true
-
-	# Diễn hoạt xoay 1080 độ trong 0.48s
-	var duration := 0.48
-	var tw := vortex_root.create_tween().set_parallel(true)
-	tw.tween_property(ring1_pivot, "rotation:y", deg_to_rad(1080.0), duration)
-	tw.tween_property(ring2_pivot, "rotation:y", PI + deg_to_rad(1080.0), duration)
-	tw.tween_property(decal1, "rotation:y", deg_to_rad(360.0), duration)
-	tw.tween_property(decal2, "rotation:y", deg_to_rad(-360.0), duration)
-
-	tw.tween_method(func(v: float):
-		if is_instance_valid(smat1):
-			smat1.set_shader_parameter("progress", v)
-		if is_instance_valid(smat2):
-			smat2.set_shader_parameter("progress", v)
-	, 0.1, 0.95, duration)
-
-	tw.chain().tween_callback(vortex_root.queue_free)
-
-## Chiêu 4: Bom Khói 3D phím E — Ám Ảnh Lôi Vụ 4 Tầng
-static func spawn_smoke_bomb_3d(
-	parent_node: Node,
-	start_pos: Vector3,
-	target_pos: Vector3
-) -> void:
-	var p := _get_root_parent(parent_node)
-	if p == null:
-		return
-
-	var model_path := "res://assets/weapons/smokebomb.gltf"
-	var scene: PackedScene = null
-	if ResourceLoader.exists(model_path):
-		scene = load(model_path) as PackedScene
-
-	var proj: Node3D = null
-	if scene != null:
-		proj = scene.instantiate() as Node3D
-	else:
-		proj = Node3D.new()
-
-	proj.name = "SmokeBomb3DProjectile"
-	p.add_child(proj)
-	proj.global_position = start_pos
-
-	# Đuôi sáng màu Tím Ngọc (magic_03)
-	var trail := GPUParticles3D.new()
-	trail.name = "BombTrail"
-	trail.amount = 16
-	trail.lifetime = 0.25
-	trail.local_coords = false
-
-	var tpmat := ParticleProcessMaterial.new()
-	tpmat.direction = Vector3(0, 0, -1)
-	tpmat.spread = 25.0
-	tpmat.initial_velocity_min = 1.0
-	tpmat.initial_velocity_max = 2.5
-	tpmat.gravity = Vector3(0, -1.0, 0)
-	tpmat.scale_min = 0.15
-	tpmat.scale_max = 0.35
-	trail.process_material = tpmat
-
-	var tmat := _create_additive_particle_mat(_get_tex("magic_03.png"), Color(0.7, 0.3, 1.0, 0.9))
-	var qmesh := get_safe_particle_quad_mesh(Vector2(0.35, 0.35))
-	qmesh.surface_set_material(0, tmat)
-	trail.draw_pass_1 = qmesh
-	proj.add_child(trail)
-	trail.emitting = true
-
-	# Bay theo đường parabol (fly_time = 0.55s)
-	var fly_time := 0.55
-	var mid_pos := (start_pos + target_pos) * 0.5
-	mid_pos.y += 3.5
-
-	var tween := proj.create_tween()
-	tween.tween_property(proj, "global_position", mid_pos, fly_time * 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tween.tween_property(proj, "global_position", target_pos, fly_time * 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	tween.tween_callback(func():
-		_spawn_smoke_bomb_4layer_detonation(p, target_pos)
-		proj.queue_free()
-	)
-
-## Nổ 4 lớp liên hoàn của Ám Ảnh Lôi Vụ
-static func _spawn_smoke_bomb_4layer_detonation(parent: Node, pos: Vector3) -> void:
-	# Lớp 1: Chớp Sáng Tâm Nổ (Sprite3D light_02 + OmniLight3D Tím Điện)
-	var flash_sprite := Sprite3D.new()
-	flash_sprite.name = "SmokeDetonationFlash"
-	flash_sprite.texture = _get_tex("light_02.png")
-	flash_sprite.modulate = Color(0.85, 0.35, 1.0, 1.0)
-	flash_sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	flash_sprite.no_depth_test = true
-	flash_sprite.pixel_size = 0.012
-	parent.add_child(flash_sprite)
-	flash_sprite.global_position = pos + Vector3(0.0, 0.8, 0.0)
-
-	var light := OmniLight3D.new()
-	light.light_color = Color(0.8, 0.3, 1.0)
-	light.light_energy = 4.5
-	light.omni_range = 5.5
-	parent.add_child(light)
-	light.global_position = pos + Vector3(0.0, 0.8, 0.0)
-
-	var tw_flash := flash_sprite.create_tween().set_parallel(true)
-	tw_flash.tween_property(flash_sprite, "scale", Vector3(2.5, 2.5, 2.5), 0.35)
-	tw_flash.tween_property(flash_sprite, "modulate:a", 0.0, 0.35)
-	tw_flash.tween_property(light, "light_energy", 0.0, 0.35)
-	tw_flash.chain().tween_callback(flash_sprite.queue_free)
-	tw_flash.parallel().tween_callback(light.queue_free)
-
-	# Lớp 2: Ấn Chú Mặt Đất (Decal circle_04 màu Tím Hồng in chặt trong 2.5s)
-	var ground_decal := Decal.new()
-	ground_decal.name = "SmokeRuneDecal"
-	ground_decal.size = Vector3(8.0, 4.0, 8.0)
-	ground_decal.texture_albedo = _get_tex("circle_04.png")
-	ground_decal.modulate = Color(0.75, 0.2, 0.9, 0.85)
-	parent.add_child(ground_decal)
-	ground_decal.global_position = pos + Vector3(0.0, 0.15, 0.0)
-
-	var tw_decal := ground_decal.create_tween()
-	tw_decal.tween_interval(2.1)
-	tw_decal.tween_property(ground_decal, "modulate:a", 0.0, 0.4)
-	tw_decal.tween_callback(ground_decal.queue_free)
-
-	# Lớp 3: Đám Mây Khói Ma Thuật Cuộn Xoáy (smoke_04 & smoke_07 Tím Đen dày đặc)
-	var smoke := GPUParticles3D.new()
-	smoke.name = "SmokeCloudZone"
-	smoke.amount = 32
-	smoke.lifetime = 2.2
-	smoke.one_shot = true
-	smoke.explosiveness = 0.82
-	smoke.local_coords = false
-
-	var spmat := ParticleProcessMaterial.new()
-	spmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	spmat.emission_sphere_radius = 2.2
-	spmat.direction = Vector3(0, 1, 0)
-	spmat.spread = 80.0
-	spmat.initial_velocity_min = 1.2
-	spmat.initial_velocity_max = 3.2
-	spmat.gravity = Vector3(0, 0.2, 0)
-	spmat.damping_min = 1.5
-	spmat.damping_max = 3.5
-	spmat.scale_min = 0.8
-	spmat.scale_max = 1.8
-	smoke.process_material = spmat
-
-	var smat := _create_additive_particle_mat(_get_tex("smoke_04.png"), Color(0.42, 0.15, 0.55, 0.75))
-	var qmesh := get_safe_particle_quad_mesh(Vector2(1.2, 1.2))
-	qmesh.surface_set_material(0, smat)
-	smoke.draw_pass_1 = qmesh
-
-	parent.add_child(smoke)
-	smoke.global_position = pos + Vector3(0.0, 0.5, 0.0)
-	smoke.emitting = true
-	smoke.finished.connect(smoke.queue_free)
-
-	# Lớp 4: Tia Sét Giật Trong Khói (spark_06 giật lách tách)
-	var thunder := GPUParticles3D.new()
-	thunder.name = "SmokeThunderSparks"
-	thunder.amount = 24
-	thunder.lifetime = 0.35
-	thunder.one_shot = false
-	thunder.local_coords = false
-
-	var th_pmat := ParticleProcessMaterial.new()
-	th_pmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	th_pmat.emission_sphere_radius = 3.0
-	th_pmat.direction = Vector3(0, 1, 0)
-	th_pmat.spread = 180.0
-	th_pmat.initial_velocity_min = 2.0
-	th_pmat.initial_velocity_max = 5.0
-	th_pmat.scale_min = 0.25
-	th_pmat.scale_max = 0.55
-	thunder.process_material = th_pmat
-
-	var th_mat := _create_additive_particle_mat(_get_tex("spark_06.png"), Color(0.7, 0.5, 1.0, 1.0))
-	var th_mesh := get_safe_particle_quad_mesh(Vector2(0.5, 0.5))
-	th_mesh.surface_set_material(0, th_mat)
-	thunder.draw_pass_1 = th_mesh
-
-	parent.add_child(thunder)
-	thunder.global_position = pos + Vector3(0.0, 1.0, 0.0)
-	thunder.emitting = true
-
-	# Tắt sét sau 2.5s
-	var tw_thunder := thunder.create_tween()
-	tw_thunder.tween_interval(2.2)
-	tw_thunder.tween_callback(func():
-		thunder.emitting = false
-	)
-	tw_thunder.tween_interval(0.4)
-	tw_thunder.tween_callback(thunder.queue_free)
-
-## Chiêu 5: Vết Chém Chữ Thập X-Slash Khi Trúng Đòn (Task 20.4 Hit Impact)
-static func spawn_cross_slash_hit_impact(
-	world_pos: Vector3,
-	parent_node: Node = null
-) -> void:
-	var p := _get_root_parent(parent_node)
-	if p == null:
-		return
-
-	var impact_root := Node3D.new()
-	impact_root.name = "CrossSlashHitImpact"
-	p.add_child(impact_root)
-	impact_root.global_position = world_pos
-
-	# Tia chém 1: slash_04.png chéo +42 độ
-	var slash1 := Sprite3D.new()
-	slash1.name = "SlashCross1"
-	slash1.texture = _get_tex("slash_04.png")
-	slash1.modulate = Color(1.8, 1.4, 0.8, 1.0)
-	slash1.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	slash1.no_depth_test = true
-	slash1.pixel_size = 0.003
-	slash1.rotation.z = deg_to_rad(42.0)
-	slash1.scale = Vector3(0.2, 0.2, 0.2)
-	impact_root.add_child(slash1)
-
-	# Tia chém 2: slash_04.png chéo -42 độ
-	var slash2 := Sprite3D.new()
-	slash2.name = "SlashCross2"
-	slash2.texture = _get_tex("slash_04.png")
-	slash2.modulate = Color(1.8, 1.0, 0.4, 1.0)
-	slash2.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	slash2.no_depth_test = true
-	slash2.pixel_size = 0.003
-	slash2.rotation.z = deg_to_rad(-42.0)
-	slash2.scale = Vector3(0.2, 0.2, 0.2)
-	impact_root.add_child(slash2)
-
-	# Ngôi sao chớp sáng tâm star_08.png
-	var star := Sprite3D.new()
-	star.name = "HitStarFlash"
-	star.texture = _get_tex("star_08.png")
-	star.modulate = Color(2.0, 2.0, 1.6, 1.0)
-	star.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	star.no_depth_test = true
-	star.pixel_size = 0.0025
-	star.scale = Vector3(0.3, 0.3, 0.3)
-	impact_root.add_child(star)
-
-	var tw := impact_root.create_tween().set_parallel(true)
-	tw.tween_property(slash1, "scale", Vector3(1.2, 1.2, 1.2), 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_property(slash2, "scale", Vector3(1.2, 1.2, 1.2), 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_property(star, "scale", Vector3(1.5, 1.5, 1.5), 0.15).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.chain().tween_property(slash1, "modulate:a", 0.0, 0.12)
-	tw.parallel().tween_property(slash2, "modulate:a", 0.0, 0.12)
-	tw.parallel().tween_property(star, "modulate:a", 0.0, 0.12)
-	tw.chain().tween_callback(impact_root.queue_free)
-
-	# 18 hạt tia lửa spark_01 văng tung tóe
-	var sparks := GPUParticles3D.new()
-	sparks.name = "HitSparks"
-	sparks.amount = 18
-	sparks.lifetime = 0.28
-	sparks.one_shot = true
-	sparks.explosiveness = 0.95
-	sparks.local_coords = false
-
-	var pmat := ParticleProcessMaterial.new()
-	pmat.direction = Vector3(0, 1, 0)
-	pmat.spread = 180.0
-	pmat.initial_velocity_min = 3.5
-	pmat.initial_velocity_max = 7.5
-	pmat.gravity = Vector3(0, -6.0, 0)
-	pmat.scale_min = 0.2
-	pmat.scale_max = 0.45
-	sparks.process_material = pmat
-
-	var draw_mat := _create_additive_particle_mat(_get_tex("spark_01.png"), Color(1.0, 0.85, 0.3, 1.0))
-	var qmesh := get_safe_particle_quad_mesh(Vector2(0.4, 0.4))
-	qmesh.surface_set_material(0, draw_mat)
-	sparks.draw_pass_1 = qmesh
-
-	p.add_child(sparks)
-	sparks.global_position = world_pos
-	sparks.emitting = true
-	sparks.finished.connect(sparks.queue_free)
-
-## Tương thích ngược: Nổ trúng đòn tại ngực mục tiêu
-static func spawn_hit_impact_at_chest(target_node: Node3D) -> void:
-	if not is_instance_valid(target_node):
-		return
-	var hit_pos: Vector3 = target_node.global_position + Vector3(0.0, 0.95, 0.0)
-	spawn_cross_slash_hit_impact(hit_pos, target_node)
-
-## Chiêu 6: Hiệu Ứng Lướt Space (Gió lướt sát sàn)
-static func spawn_dash_trail(
-	hero_node: Node3D,
-	dash_dir: Vector3,
-	parent_node: Node = null
-) -> void:
-	var p := _get_root_parent(parent_node)
-	if p == null or not is_instance_valid(hero_node):
-		return
-
-	var dash_sprite := Sprite3D.new()
-	dash_sprite.name = "DashWindStreak"
-	dash_sprite.texture = _get_tex("slash_02.png")
-	dash_sprite.modulate = Color(0.3, 0.8, 1.0, 0.8)
-	dash_sprite.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-	dash_sprite.rotation.x = deg_to_rad(90.0)
-	dash_sprite.rotation.y = atan2(dash_dir.x, dash_dir.z)
-	dash_sprite.pixel_size = 0.006
-	dash_sprite.scale = Vector3(0.5, 0.5, 0.5)
-	p.add_child(dash_sprite)
-	dash_sprite.global_position = hero_node.global_position + Vector3(0.0, 0.2, 0.0)
-
-	var tw := dash_sprite.create_tween().set_parallel(true)
-	tw.tween_property(dash_sprite, "scale", Vector3(1.8, 1.8, 1.8), 0.28)
-	tw.tween_property(dash_sprite, "modulate:a", 0.0, 0.28)
-	tw.chain().tween_callback(dash_sprite.queue_free)
-
-## Chiêu 6 (Phần 2): Sóng Xung Kích Khi Lướt Húc Văng Bot (Task 20.4 Chiêu Space)
-static func spawn_dash_impact(
-	impact_pos: Vector3,
-	impact_dir: Vector3,
-	parent_node: Node = null
-) -> void:
-	var p := _get_root_parent(parent_node)
-	if p == null:
-		return
-
-	# Vòng Sóng Va Chạm Dựng Đứng (circle_03.png phóng to 0.3m -> 2.6m)
-	var shock_sprite := Sprite3D.new()
-	shock_sprite.name = "DashImpactShockwave"
-	shock_sprite.texture = _get_tex("circle_03.png")
-	shock_sprite.modulate = Color(1.3, 0.95, 0.4, 1.0)
-	shock_sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	shock_sprite.no_depth_test = true
-	shock_sprite.pixel_size = 0.0035
-	shock_sprite.scale = Vector3(0.3, 0.3, 0.3)
-	p.add_child(shock_sprite)
-	shock_sprite.global_position = impact_pos
-
-	var tw := shock_sprite.create_tween().set_parallel(true)
-	tw.tween_property(shock_sprite, "scale", Vector3(2.6, 2.6, 2.6), 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.chain().tween_property(shock_sprite, "modulate:a", 0.0, 0.12)
-	tw.chain().tween_callback(shock_sprite.queue_free)
-
-	# Hạt tia lửa va chạm spark_05
-	var sparks := GPUParticles3D.new()
-	sparks.name = "DashImpactSparks"
-	sparks.amount = 16
-	sparks.lifetime = 0.24
-	sparks.one_shot = true
-	sparks.explosiveness = 0.92
-	sparks.local_coords = false
-
-	var pmat := ParticleProcessMaterial.new()
-	pmat.direction = impact_dir
-	pmat.spread = 75.0
-	pmat.initial_velocity_min = 4.0
-	pmat.initial_velocity_max = 8.5
-	pmat.gravity = Vector3(0, -5.0, 0)
-	pmat.scale_min = 0.25
-	pmat.scale_max = 0.5
-	sparks.process_material = pmat
-
-	var draw_mat := _create_additive_particle_mat(_get_tex("spark_05.png"), Color(1.0, 0.8, 0.3, 1.0))
-	var qmesh := get_safe_particle_quad_mesh(Vector2(0.4, 0.4))
-	qmesh.surface_set_material(0, draw_mat)
-	sparks.draw_pass_1 = qmesh
-
-	p.add_child(sparks)
-	sparks.global_position = impact_pos
-	sparks.emitting = true
-	sparks.finished.connect(sparks.queue_free)
-
-# ==============================================================================
-# 3. TIỆN ÍCH DÀNH CHO VŨ KHÍ & VỆT KIẾM (Compatibility Utilities)
-# ==============================================================================
-
-## Gắn vệt kiếm GPUParticles3D bằng ArrayMesh an toàn (0% PrimitiveMesh)
-static func attach_sword_trail_particles(
-	blade_center: Marker3D,
-	blade_tip: Marker3D
-) -> Array[GPUParticles3D]:
-	# Center trail (Vệt kiếm vàng kim)
-	var center_p := GPUParticles3D.new()
-	center_p.name = "SwordTrailCenter"
-	center_p.emitting = false
-	center_p.local_coords = false
-	center_p.amount = 32
-	center_p.lifetime = 0.16
-
-	var qm1 := get_safe_particle_quad_mesh(Vector2(0.08, 0.08))
-	var mat1 := _create_additive_particle_mat(_get_tex("slash_01.png"), Color(1.0, 0.85, 0.3, 1.0))
-	qm1.surface_set_material(0, mat1)
-	center_p.draw_pass_1 = qm1
-
-	center_p.process_material = _create_particle_process_mat(
-		Vector3(0, 1, 0), 25.0, 0.3, 1.2, Vector3.ZERO, 0.04, 0.1
-	)
-	blade_center.add_child(center_p)
-
-	# Tip trail (Tia lửa cam sáng)
-	var tip_p := GPUParticles3D.new()
-	tip_p.name = "SwordTrailTip"
-	tip_p.emitting = false
-	tip_p.local_coords = false
-	tip_p.amount = 32
-	tip_p.lifetime = 0.16
-
-	var qm2 := get_safe_particle_quad_mesh(Vector2(0.06, 0.06))
-	var mat2 := _create_additive_particle_mat(_get_tex("spark_02.png"), Color(1.0, 0.6, 0.15, 1.0))
-	qm2.surface_set_material(0, mat2)
-	tip_p.draw_pass_1 = qm2
-
-	tip_p.process_material = _create_particle_process_mat(
-		Vector3(0, 1, 0), 35.0, 0.5, 1.8, Vector3.ZERO, 0.03, 0.08
-	)
-	blade_tip.add_child(tip_p)
-
-	var result: Array[GPUParticles3D] = [center_p, tip_p]
-	return result
-
-static func enable_sword_trails(trails: Array[GPUParticles3D]) -> void:
-	for p in trails:
-		if is_instance_valid(p):
-			p.emitting = true
-
-static func disable_sword_trails(trails: Array[GPUParticles3D]) -> void:
-	for p in trails:
-		if is_instance_valid(p):
-			p.emitting = false
-
-static func spawn_ground_decal_shockwave(
-	parent: Node,
-	ground_pos: Vector3,
-	radius: float,
-	color: Color
-) -> void:
-	var p := _get_root_parent(parent)
-	if p == null:
-		return
-
-	var decal := Decal.new()
-	decal.name = "GroundShockwave"
-	var initial_size := radius * 0.6
-	decal.size = Vector3(initial_size * 2.0, 3.5, initial_size * 2.0)
-	decal.texture_albedo = _get_tex("circle_01.png")
-	decal.modulate = color
-	p.add_child(decal)
-	decal.global_position = ground_pos + Vector3(0.0, 0.15, 0.0)
-
-	var tween := decal.create_tween()
-	var final_size := Vector3(radius * 2.0, 3.5, radius * 2.0)
-	tween.tween_property(decal, "size", final_size, 0.3).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
-	tween.parallel().tween_property(decal, "modulate:a", 0.0, 0.6).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
-	tween.tween_callback(decal.queue_free)
-
-static func spawn_kaykit_3d_projectile(
-	parent: Node,
-	start_pos: Vector3,
-	target_pos: Vector3,
-	projectile_type: String = "smokebomb"
-) -> void:
-	if projectile_type == "smokebomb":
-		spawn_smoke_bomb_3d(parent, start_pos, target_pos)
-		return
-
-	var p := _get_root_parent(parent)
-	if p == null:
-		return
-
-	var model_path := "res://assets/weapons/arrow.gltf"
-	var scene: PackedScene = null
-	if ResourceLoader.exists(model_path):
-		scene = load(model_path) as PackedScene
-	if scene == null:
-		return
-
-	var proj: Node3D = scene.instantiate() as Node3D
-	p.add_child(proj)
-	proj.global_position = start_pos
-	var dir_to_target := (target_pos - start_pos).normalized()
-	if dir_to_target.length_squared() > 0.001:
-		proj.look_at(target_pos, Vector3.UP)
-
-	var tween := proj.create_tween()
-	tween.tween_property(proj, "global_position", target_pos, 0.35).set_trans(Tween.TRANS_LINEAR)
-	tween.tween_callback(proj.queue_free)
 
 ```
 
@@ -8779,7 +7950,6 @@ extends CharacterBody3D
 
 const KayKitAssetRegistry = preload("res://scripts/core/kaykit_asset_registry.gd")
 const KayKitAnimationBinder = preload("res://scripts/characters/kaykit_animation_binder.gd")
-const KayKitVFXManager = preload("res://scripts/vfx/kaykit_vfx_manager.gd")
 
 @export var max_hp: float = 80.0
 @export var move_speed: float = 4.2
@@ -8826,6 +7996,8 @@ var _stuck_timer: float = 0.0
 var _hit_stun_timer: float = 0.0
 var _smoke_slow_timer: float = 0.0
 var _smoke_slow_factor: float = 0.0
+var _slow_multiplier: float = 1.0
+var _slow_timer: float = 0.0
 var _avoid_commit_timer: float = 0.0
 var _avoid_commit_sign: float = 1.0
 var _stuck_check_timer: float = 0.0
@@ -8855,13 +8027,13 @@ func _ready() -> void:
 	floor_stop_on_slope = true
 	floor_constant_speed = true
 	floor_block_on_wall = true
-	safe_margin = 0.04
+	safe_margin = 0.05
 	wall_min_slide_angle = deg_to_rad(10.0)
 
 	var col := CollisionShape3D.new()
 	col.name = "EnemyCollision"
 	var cap := CapsuleShape3D.new()
-	cap.radius = 0.52
+	cap.radius = 0.46
 	cap.height = 1.80
 	col.shape = cap
 	col.position = Vector3(0.0, 0.90, 0.0)
@@ -9047,8 +8219,13 @@ func _physics_process(delta: float) -> void:
 	# Xử lý lực đẩy lùi khi trúng đòn
 	_knockback_vel = _knockback_vel.move_toward(Vector3.ZERO, 18.0 * delta)
 
-	# Làm chậm do Bom Khói E (Task 19.4 Kỹ thuật B)
-	var current_move_speed := move_speed
+	# Làm chậm do Bom Khói Lôi Vụ E (Task 21.1)
+	if _slow_timer > 0.0:
+		_slow_timer -= delta
+		if _slow_timer <= 0.0:
+			_slow_multiplier = 1.0
+			_set_status_tint(Color.WHITE)
+	var current_move_speed := move_speed * _slow_multiplier
 	if _smoke_slow_timer > 0.0:
 		_smoke_slow_timer -= delta
 		current_move_speed *= (1.0 - _smoke_slow_factor)
@@ -9141,6 +8318,7 @@ func _physics_process(delta: float) -> void:
 
 	_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 	move_and_slide()
+	_apply_wall_micro_separation(delta)
 
 	# Anti-Stuck Depenetration Guard (Giải cứu kẹt góc tường/vật cản)
 	if get_slide_collision_count() >= 2:
@@ -9382,6 +8560,56 @@ func apply_smoke_slow(slow_factor: float, duration: float) -> void:
 	_action_lock_timer = 0.4
 	_play_anim_safe("Hit_A")
 
+## Sát thương đốt DoT (Task 21.1)
+func take_dot_damage(amount: float, tint_color: Color = Color(0.75, 0.35, 1.0)) -> void:
+	if is_dead:
+		return
+	hp = maxf(0.0, hp - amount)
+	_update_overhead_hp()
+	_spawn_floating_damage_text(amount, tint_color)
+	KayKitVFXManager.spawn_cross_slash_hit_impact(global_position + Vector3(0.0, 0.95, 0.0))
+	if hp <= 0.0:
+		take_damage(0.0)
+
+## Làm chậm Debuff (Task 21.1)
+func apply_slow_debuff(multiplier: float, duration: float) -> void:
+	if is_dead:
+		return
+	_slow_multiplier = multiplier
+	_slow_timer = maxf(_slow_timer, duration)
+	_set_status_tint(Color(0.55, 0.75, 1.35))
+
+func _set_status_tint(tint: Color) -> void:
+	if visual_root == null:
+		return
+	for m in visual_root.find_children("*", "MeshInstance3D", true, false):
+		var mi := m as MeshInstance3D
+		if mi:
+			if tint == Color.WHITE:
+				mi.material_override = null
+			else:
+				var sm := StandardMaterial3D.new()
+				sm.albedo_color = tint
+				mi.material_override = sm
+
+func _apply_wall_micro_separation(_delta: float) -> void:
+	var space_state := get_world_3d().direct_space_state
+	var chest_origin := global_position + Vector3(0.0, 0.85, 0.0)
+	var min_safe_dist := 0.52
+	for i in range(8):
+		var angle := float(i) * (TAU / 8.0)
+		var dir := Vector3(cos(angle), 0.0, sin(angle))
+		var query := PhysicsRayQueryParameters3D.create(chest_origin, chest_origin + dir * min_safe_dist, 1)
+		query.exclude = [get_rid()]
+		var hit := space_state.intersect_ray(query)
+		if not hit.is_empty():
+			var normal: Vector3 = hit["normal"]
+			if absf(normal.y) < 0.35:
+				var hit_dist := Vector2(chest_origin.x - hit["position"].x, chest_origin.z - hit["position"].z).length()
+				if hit_dist < min_safe_dist:
+					var push_vec := Vector3(normal.x, 0.0, normal.z).normalized() * (min_safe_dist - hit_dist)
+					global_position += push_vec * 0.65
+
 func take_damage(amount: float, knockback_dir: Vector3 = Vector3.ZERO) -> void:
 	if is_dead:
 		return
@@ -9417,7 +8645,7 @@ func take_damage(amount: float, knockback_dir: Vector3 = Vector3.ZERO) -> void:
 	else:
 		_play_anim_safe("Hit_A")
 
-func _spawn_floating_damage_text(damage_amount: float) -> void:
+func _spawn_floating_damage_text(damage_amount: float, custom_color: Color = Color.TRANSPARENT) -> void:
 	var dmg_label := Label3D.new()
 	dmg_label.name = "FloatingDamageText"
 	dmg_label.text = "-%.0f" % damage_amount
@@ -9425,7 +8653,10 @@ func _spawn_floating_damage_text(damage_amount: float) -> void:
 	dmg_label.no_depth_test = true
 	dmg_label.font_size = 48
 	dmg_label.outline_size = 12
-	dmg_label.modulate = Color(1.0, 0.85, 0.2)
+	if custom_color != Color.TRANSPARENT:
+		dmg_label.modulate = custom_color
+	else:
+		dmg_label.modulate = Color(1.0, 0.85, 0.2)
 	dmg_label.outline_modulate = Color(0.1, 0.05, 0.0)
 
 	var start_pos := global_position + Vector3(randf_range(-0.25, 0.25), 1.35, randf_range(-0.25, 0.25))
@@ -9629,7 +8860,7 @@ func _build_tier_3_citadel() -> void:
 		_spawn_trimesh_piece(KayKitAssetRegistry.WALL_ELEVATION, Vector3(wx, TIER_HEIGHT, -40.0), Vector3(0, 180, 0), walls_container)
 
 # ------------------------------------------------------------------------------
-# HÀM TẠO CẦU THANG KÍN CHỐNG LỌT GẦM & THÀNH BẢO VỆ HAI BÊN (LEAKPROOF STAIR ASSEMBLY)
+# HÀM TẠO CẦU THANG KÍN CHỐNG LỌT GẦM & THÀNH BẢO VỆ HAI BÊN (WATERTIGHT STAIR ASSEMBLY - TASK 21.4)
 # ------------------------------------------------------------------------------
 static func create_leakproof_stair_assembly(parent: Node3D, bottom_center: Vector3, top_center: Vector3, ramp_width: float = 5.0) -> StaticBody3D:
 	var ramp_body := StaticBody3D.new()
@@ -9643,36 +8874,60 @@ static func create_leakproof_stair_assembly(parent: Node3D, bottom_center: Vecto
 	var ramp_len := diff.length()
 	var rise_height := top_center.y - bottom_center.y
 	var mid_pos := (bottom_center + top_center) * 0.5
+	var half_w := ramp_width * 0.5
+	var half_len := ramp_len * 0.5
 
-	# 1. Mặt dốc chính nối sàn dưới lên sàn trên
+	# 1. Mặt dốc chính mở rộng nối sàn dưới lên mép sàn trên, vát sâu ăn vào sàn 0.25m
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(ramp_width, 0.25, ramp_len + 0.5)
+	box.size = Vector3(ramp_width, 0.28, ramp_len + 0.6)
 	col.shape = box
 	ramp_body.add_child(col)
 
 	ramp_body.position = mid_pos - Vector3(0.0, 0.12, 0.0)
 	ramp_body.look_at_from_position(ramp_body.position, top_center, Vector3.UP)
 
-	# 2. Hai vách chắn kín hai bên hông cầu thang (Chặn 100% đi xuyên từ phía ngang vào gầm thang)
-	var half_w := ramp_width * 0.5
+	# 2. Hai vách thành lan can vô hình ôm sát sườn thang (dày 0.35m, cao 2.4m)
 	for side in [-1.0, 1.0]:
 		var side_col := CollisionShape3D.new()
 		var side_box := BoxShape3D.new()
-		side_box.size = Vector3(0.45, rise_height + 1.5, ramp_len + 0.5)
+		side_box.size = Vector3(0.35, rise_height + 2.4, ramp_len + 0.6)
 		side_col.shape = side_box
-		side_col.position = Vector3(side * (half_w + 0.22), (rise_height + 1.5) * 0.35, 0.0)
+		side_col.position = Vector3(side * (half_w + 0.175), (rise_height + 2.4) * 0.35, 0.0)
 		ramp_body.add_child(side_col)
 
-	# 3. Khối nêm đặc lấp kín hoàn toàn bên dưới gầm cầu thang
+	# 3. Khối nêm đặc lấp kín hoàn toàn bên dưới gầm cầu thang nối khít vào tường tầng trên
 	var under_col := CollisionShape3D.new()
 	var under_box := BoxShape3D.new()
-	under_box.size = Vector3(ramp_width, rise_height, ramp_len * 0.8)
+	under_box.size = Vector3(ramp_width, rise_height + 0.4, ramp_len * 0.95)
 	under_col.shape = under_box
-	under_col.position = Vector3(0.0, -rise_height * 0.4, 0.0)
+	under_col.position = Vector3(0.0, -rise_height * 0.45, -ramp_len * 0.05)
 	ramp_body.add_child(under_col)
 
+	# 4. Gắn 2 cánh phễu vát góc 35 độ ở chân cầu thang (Bottom Funnel Bevels)
+	for side in [-1.0, 1.0]:
+		var bevel_col := CollisionShape3D.new()
+		var bevel_box := BoxShape3D.new()
+		bevel_box.size = Vector3(0.35, 2.4, 1.2)
+		bevel_col.shape = bevel_box
+		bevel_col.position = Vector3(side * (half_w + 0.35), 0.8, half_len)
+		bevel_col.rotation.y = deg_to_rad(35.0 * side)
+		ramp_body.add_child(bevel_col)
+
+	# 5. Gắn 2 cánh phễu vát góc 35 độ ở đỉnh cầu thang giao tường (Top Funnel Bevels)
+	for side in [-1.0, 1.0]:
+		var bevel_top_col := CollisionShape3D.new()
+		var bevel_top_box := BoxShape3D.new()
+		bevel_top_box.size = Vector3(0.35, 2.4, 1.2)
+		bevel_top_col.shape = bevel_top_box
+		bevel_top_col.position = Vector3(side * (half_w + 0.35), rise_height * 0.7, -half_len)
+		bevel_top_col.rotation.y = deg_to_rad(-35.0 * side)
+		ramp_body.add_child(bevel_top_col)
+
 	return ramp_body
+
+static func build_watertight_stair_assembly(parent: Node3D, bottom_center: Vector3, top_center: Vector3, ramp_width: float = 5.0) -> StaticBody3D:
+	return create_leakproof_stair_assembly(parent, bottom_center, top_center, ramp_width)
 
 static func create_smooth_stair_ramp(parent: Node3D, bottom_center: Vector3, top_center: Vector3, ramp_width: float = 5.0) -> StaticBody3D:
 	return create_leakproof_stair_assembly(parent, bottom_center, top_center, ramp_width)
@@ -11613,6 +10868,7 @@ var hero_hp_bar: ProgressBar
 var hero_hp_label: Label
 var hero_anim_label: Label
 var hero_skills_label: Label
+var skill_cooldown_label: Label
 
 var telemetry_fps_label: Label
 var telemetry_primitive_label: Label
@@ -11843,6 +11099,47 @@ func _build_ui() -> void:
 	telemetry_enemies_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	r_vbox.add_child(telemetry_enemies_label)
 
+	# --- 4. GIAO DIỆN THANH TRẠNG THÁI SKILL COOLDOWN DƯỚI ĐÁY MÀN HÌNH (Task 21.2) ---
+	var bottom_panel := PanelContainer.new()
+	bottom_panel.name = "SkillCooldownBar"
+	bottom_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bottom_panel.anchor_left = 0.5
+	bottom_panel.anchor_right = 0.5
+	bottom_panel.anchor_top = 1.0
+	bottom_panel.anchor_bottom = 1.0
+	bottom_panel.offset_left = -440.0
+	bottom_panel.offset_right = 440.0
+	bottom_panel.offset_top = -62.0
+	bottom_panel.offset_bottom = -16.0
+
+	var b_style := StyleBoxFlat.new()
+	b_style.bg_color = Color(0.06, 0.08, 0.12, 0.88)
+	b_style.border_width_left = 2
+	b_style.border_width_top = 2
+	b_style.border_width_right = 2
+	b_style.border_width_bottom = 2
+	b_style.border_color = Color(0.3, 0.7, 1.0, 0.85)
+	b_style.corner_radius_top_left = 8
+	b_style.corner_radius_top_right = 8
+	b_style.corner_radius_bottom_right = 8
+	b_style.corner_radius_bottom_left = 8
+	b_style.content_margin_left = 16
+	b_style.content_margin_top = 8
+	b_style.content_margin_right = 16
+	b_style.content_margin_bottom = 8
+	bottom_panel.add_theme_stylebox_override("panel", b_style)
+	overlay_root.add_child(bottom_panel)
+
+	skill_cooldown_label = Label.new()
+	skill_cooldown_label.name = "SkillCooldownLabel"
+	skill_cooldown_label.text = "[LMB] Liên Trảm: SẴN SÀNG  |  [RMB] Phá Không Trảm: SẴN SÀNG  |  [Q] Cuồng Phong 360°: SẴN SÀNG  |  [E] Bom Lôi Vụ (7.5m): SẴN SÀNG"
+	skill_cooldown_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	skill_cooldown_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	skill_cooldown_label.add_theme_font_size_override("font_size", 13)
+	skill_cooldown_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.5))
+	skill_cooldown_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bottom_panel.add_child(skill_cooldown_label)
+
 func _apply_mouse_filter_ignore(node: Node) -> void:
 	if node is Control:
 		if node.name == "RestartButton":
@@ -11937,6 +11234,22 @@ func _update_telemetry_display(delta: float) -> void:
 		if "blade_tip_marker" in hero and hero.blade_tip_marker and is_instance_valid(hero.blade_tip_marker):
 			var tip: Vector3 = hero.blade_tip_marker.global_position
 			telemetry_blade_label.text = "Blade Tip: (%.2f, %.2f, %.2f)" % [tip.x, tip.y, tip.z]
+
+		# Update Skill Cooldowns (Task 21.2)
+		if skill_cooldown_label != null:
+			var rmb_text := "SẴN SÀNG"
+			if "_cd_rmb_timer" in hero and hero._cd_rmb_timer > 0.05:
+				rmb_text = "CD: %.1fs" % hero._cd_rmb_timer
+
+			var q_text := "SẴN SÀNG"
+			if "_cd_q_timer" in hero and hero._cd_q_timer > 0.05:
+				q_text = "CD: %.1fs" % hero._cd_q_timer
+
+			var e_text := "SẴN SÀNG"
+			if "_cd_e_timer" in hero and hero._cd_e_timer > 0.05:
+				e_text = "CD: %.1fs" % hero._cd_e_timer
+
+			skill_cooldown_label.text = "[LMB] Liên Trảm: SẴN SÀNG   |   [RMB] Phá Không Trảm: %s   |   [Q] Cuồng Phong 360°: %s   |   [E] Bom Lôi Vụ (7.5m): %s" % [rmb_text, q_text, e_text]
 
 	# Enemies count
 	var enemies := get_tree().get_nodes_in_group("enemies")
@@ -12866,6 +12179,173 @@ static func spawn_shield_bash_vfx(
 	# Vòng sóng xung kích Decal dưới sàn
 	spawn_ground_decal_shockwave(p, origin, 2.5, Color(0.3, 0.7, 1.0, 0.8))
 
+## Chiêu RMB Mới: Thánh Kiếm Phá Không Trảm (Solar Cross-Cleave, Task 21.3)
+static func spawn_rmb_solar_cross_cleave(
+	origin_pos: Vector3,
+	forward_yaw: float,
+	parent_node: Node = null
+) -> Node3D:
+	var p := _get_root_parent(parent_node)
+	if p == null:
+		return null
+
+	var root := Node3D.new()
+	root.name = "SolarCrossCleaveVFX"
+	p.add_child(root)
+	root.global_position = origin_pos
+	root.rotation.y = forward_yaw
+
+	# Màu sắc quy chuẩn Task 21.3:
+	var core_col := Color(4.5, 4.2, 3.5, 1.0) # Trắng Kim Cương HDR
+	var main_col := Color(1.0, 0.72, 0.05, 1.0) # Vàng Thái Dương
+	var edge_col := Color(0.95, 0.12, 0.02, 1.0) # Đỏ Hỏa Ngục
+
+	# LỚP 1: Song Kiếm Khí Chữ Thập 3D (+38 độ và -38 độ)
+	var x_root := Node3D.new()
+	x_root.name = "CrossSlashesRoot"
+	root.add_child(x_root)
+	x_root.position = Vector3(0.0, 0.95, 1.2)
+
+	for tilt in [38.0, -38.0]:
+		var pivot := Node3D.new()
+		pivot.name = "CrossArm_" + str(int(tilt))
+		x_root.add_child(pivot)
+		pivot.rotation.z = deg_to_rad(tilt)
+
+		var arc_mesh := MeshInstance3D.new()
+		arc_mesh.name = "CrossSlashArc"
+		arc_mesh.mesh = build_curved_slash_arc_mesh(0.7, 2.6, 145.0, 26, 0.1)
+		arc_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+		var smat := ShaderMaterial.new()
+		smat.shader = _get_slash_shader()
+		smat.set_shader_parameter("slash_mask_tex", _get_tex("slash_01.png"))
+		smat.set_shader_parameter("core_color", core_col)
+		smat.set_shader_parameter("main_color", main_col)
+		smat.set_shader_parameter("edge_color", edge_col)
+		smat.set_shader_parameter("emission_boost", 4.5)
+		smat.set_shader_parameter("progress", 0.05)
+		arc_mesh.material_override = smat
+		pivot.add_child(arc_mesh)
+
+		var tw_arc := pivot.create_tween().set_parallel(true)
+		tw_arc.tween_method(func(v: float):
+			if is_instance_valid(smat):
+				smat.set_shader_parameter("progress", v)
+		, 0.05, 1.0, 0.28)
+		tw_arc.tween_property(pivot, "rotation:y", deg_to_rad(25.0 if tilt > 0 else -25.0), 0.28).from(deg_to_rad(-15.0 if tilt > 0 else 15.0))
+
+	# Hạt tia lửa chém chữ X
+	_spawn_slash_sparks_burst(x_root, main_col, edge_col, 1.2)
+
+	# LỚP 3: Ấn Chú & Vết Nứt Mặt Đất (circle_02 + scorch_02)
+	var decal_root := Node3D.new()
+	decal_root.name = "CrossGroundDecalRoot"
+	root.add_child(decal_root)
+	decal_root.position = Vector3(0.0, 0.1, 1.2)
+
+	var d1 := Decal.new()
+	d1.name = "SolarCrossDecalRune"
+	d1.size = Vector3(3.2, 2.5, 3.2)
+	d1.texture_albedo = _get_tex("circle_02.png")
+	d1.modulate = Color(1.0, 0.75, 0.15, 0.95)
+	decal_root.add_child(d1)
+
+	var d2 := Decal.new()
+	d2.name = "SolarCrossDecalScorch"
+	d2.size = Vector3(2.8, 2.5, 2.8)
+	d2.texture_albedo = _get_tex("scorch_02.png")
+	d2.modulate = Color(1.0, 0.35, 0.05, 0.9)
+	decal_root.add_child(d2)
+
+	var tw_decal := decal_root.create_tween()
+	tw_decal.tween_interval(0.6)
+	tw_decal.tween_property(d1, "modulate:a", 0.0, 0.4)
+	tw_decal.parallel().tween_property(d2, "modulate:a", 0.0, 0.4)
+	tw_decal.tween_callback(decal_root.queue_free)
+
+	# LỚP 4: OmniLight3D vàng cam
+	var light := OmniLight3D.new()
+	light.name = "SolarCrossLight"
+	light.light_color = Color(1.0, 0.65, 0.1)
+	light.light_energy = 5.0
+	light.omni_range = 6.0
+	root.add_child(light)
+	light.position = Vector3(0.0, 1.0, 1.2)
+
+	var tw_light := light.create_tween()
+	tw_light.tween_property(light, "light_energy", 0.0, 0.22)
+	tw_light.tween_callback(light.queue_free)
+
+	# LỚP 2: Lưỡi Sóng Kiếm Khí Càn Quét Mặt Đất (Forward Traveling Crescent Wave)
+	# Phóng dọc theo hướng trước mặt 4.8m trong 0.22s
+	var wave_root := Node3D.new()
+	wave_root.name = "ForwardCrescentWave"
+	root.add_child(wave_root)
+	wave_root.position = Vector3(0.0, 0.35, 1.2)
+
+	var wave_mesh := MeshInstance3D.new()
+	wave_mesh.name = "WaveCrescentMesh"
+	wave_mesh.mesh = build_curved_slash_arc_mesh(0.4, 1.8, 110.0, 20, 0.05)
+	wave_mesh.rotation.x = deg_to_rad(-80.0)
+	wave_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+	var wave_mat := ShaderMaterial.new()
+	wave_mat.shader = _get_slash_shader()
+	wave_mat.set_shader_parameter("slash_mask_tex", _get_tex("slash_03.png"))
+	wave_mat.set_shader_parameter("core_color", core_col)
+	wave_mat.set_shader_parameter("main_color", main_col)
+	wave_mat.set_shader_parameter("edge_color", edge_col)
+	wave_mat.set_shader_parameter("emission_boost", 5.0)
+	wave_mat.set_shader_parameter("progress", 0.2)
+	wave_mesh.material_override = wave_mat
+	wave_root.add_child(wave_mesh)
+
+	# Hạt tia lửa đuôi bám theo sóng: spark_05.png
+	var wave_sparks := GPUParticles3D.new()
+	wave_sparks.name = "WaveSparks"
+	wave_sparks.amount = 20
+	wave_sparks.lifetime = 0.22
+	wave_sparks.local_coords = false
+
+	var wpmat := ParticleProcessMaterial.new()
+	wpmat.direction = Vector3(0, 0.3, -1)
+	wpmat.spread = 35.0
+	wpmat.initial_velocity_min = 2.0
+	wpmat.initial_velocity_max = 5.0
+	wpmat.gravity = Vector3(0, -3.0, 0)
+	wpmat.scale_min = 0.25
+	wpmat.scale_max = 0.55
+	wave_sparks.process_material = wpmat
+
+	var w_draw_mat := _create_additive_particle_mat(_get_tex("spark_05.png"), Color(1.0, 0.7, 0.2, 1.0))
+	var wqmesh := get_safe_particle_quad_mesh(Vector2(0.45, 0.45))
+	wqmesh.surface_set_material(0, w_draw_mat)
+	wave_sparks.draw_pass_1 = wqmesh
+	wave_root.add_child(wave_sparks)
+	wave_sparks.emitting = true
+
+	# Di chuyển sóng 4.8m trong 0.22s
+	var tw_wave := wave_root.create_tween().set_parallel(true)
+	tw_wave.tween_property(wave_root, "position:z", 1.2 + 4.8, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw_wave.tween_method(func(v: float):
+		if is_instance_valid(wave_mat):
+			wave_mat.set_shader_parameter("progress", v)
+	, 0.2, 1.0, 0.22)
+	tw_wave.chain().tween_callback(func():
+		wave_sparks.emitting = false
+		wave_mesh.visible = false
+	)
+	tw_wave.chain().tween_interval(0.3)
+	tw_wave.tween_callback(wave_root.queue_free)
+
+	# Tự hủy root
+	var tw_root := root.create_tween()
+	tw_root.tween_interval(1.2)
+	tw_root.tween_callback(root.queue_free)
+
+	return root
+
 ## Chiêu 3: Tuyệt chiêu Q — Song Long Lốc Xoáy 360° (Task 20.4 Chiêu Q)
 static func spawn_whirlwind_360_vfx(
 	hero_node: Node3D,
@@ -12989,15 +12469,15 @@ static func spawn_whirlwind_360_vfx(
 
 	tw.chain().tween_callback(vortex_root.queue_free)
 
-## Chiêu 4: Bom Khói 3D phím E — Ám Ảnh Lôi Vụ 4 Tầng
-static func spawn_smoke_bomb_3d(
+## Chiêu 4: Bom Khói 3D phím E — Vùng Khói Lôi Vụ (Task 21.1)
+static func spawn_smoke_bomb_hazard_zone(
 	parent_node: Node,
 	start_pos: Vector3,
 	target_pos: Vector3
-) -> void:
+) -> Node3D:
 	var p := _get_root_parent(parent_node)
 	if p == null:
-		return
+		return null
 
 	var model_path := "res://assets/weapons/smokebomb.gltf"
 	var scene: PackedScene = null
@@ -13018,7 +12498,7 @@ static func spawn_smoke_bomb_3d(
 	var trail := GPUParticles3D.new()
 	trail.name = "BombTrail"
 	trail.amount = 16
-	trail.lifetime = 0.25
+	trail.lifetime = 0.22
 	trail.local_coords = false
 
 	var tpmat := ParticleProcessMaterial.new()
@@ -13038,22 +12518,46 @@ static func spawn_smoke_bomb_3d(
 	proj.add_child(trail)
 	trail.emitting = true
 
-	# Bay theo đường parabol (fly_time = 0.55s)
-	var fly_time := 0.55
+	# Bay theo đường parabol (fly_time = 0.22s theo Task 21.1)
+	var fly_time := 0.22
 	var mid_pos := (start_pos + target_pos) * 0.5
-	mid_pos.y += 3.5
+	mid_pos.y += 2.2
 
 	var tween := proj.create_tween()
 	tween.tween_property(proj, "global_position", mid_pos, fly_time * 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tween.tween_property(proj, "global_position", target_pos, fly_time * 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tween.tween_callback(func():
-		_spawn_smoke_bomb_4layer_detonation(p, target_pos)
+		_detonate_smoke_hazard_zone(p, target_pos)
 		proj.queue_free()
 	)
+	return proj
 
-## Nổ 4 lớp liên hoàn của Ám Ảnh Lôi Vụ
-static func _spawn_smoke_bomb_4layer_detonation(parent: Node, pos: Vector3) -> void:
-	# Lớp 1: Chớp Sáng Tâm Nổ (Sprite3D light_02 + OmniLight3D Tím Điện)
+static func spawn_smoke_bomb_3d(
+	parent_node: Node,
+	start_pos: Vector3,
+	target_pos: Vector3
+) -> void:
+	spawn_smoke_bomb_hazard_zone(parent_node, start_pos, target_pos)
+
+## Kích nổ 4 lớp liên hoàn + Vùng Khói Lôi Vụ DoT & Slow (Task 21.1)
+static func _detonate_smoke_hazard_zone(parent: Node, pos: Vector3) -> void:
+	# 1. Sát thương nổ tức thì 20.0 DMG cho các Bot trong bán kính 3.2m
+	var tree := parent.get_tree()
+	if tree != null:
+		var enemies := tree.get_nodes_in_group("enemies")
+		for bot in enemies:
+			if is_instance_valid(bot) and bot is Node3D:
+				var b_node := bot as Node3D
+				var flat_dist := Vector2(b_node.global_position.x - pos.x, b_node.global_position.z - pos.z).length()
+				var y_diff := absf(b_node.global_position.y - pos.y)
+				if flat_dist <= 3.2 and y_diff <= 1.8:
+					if bot.has_method("take_damage"):
+						var kb: Vector3 = (b_node.global_position - pos).normalized()
+						bot.take_damage(20.0, kb)
+					elif bot.has_method("take_dot_damage"):
+						bot.take_dot_damage(20.0, Color(0.85, 0.35, 1.0))
+
+	# 2. Lớp chớp sáng tâm nổ (Sprite3D light_02 + OmniLight3D tím điện)
 	var flash_sprite := Sprite3D.new()
 	flash_sprite.name = "SmokeDetonationFlash"
 	flash_sprite.texture = _get_tex("light_02.png")
@@ -13078,39 +12582,39 @@ static func _spawn_smoke_bomb_4layer_detonation(parent: Node, pos: Vector3) -> v
 	tw_flash.chain().tween_callback(flash_sprite.queue_free)
 	tw_flash.parallel().tween_callback(light.queue_free)
 
-	# Lớp 2: Ấn Chú Mặt Đất (Decal circle_04 màu Tím Hồng in chặt trong 2.5s)
+	# 3. VÙNG KHÓI LÔI VỤ HAZARD ZONE (4.0s, Bán kính 3.2m)
+	var hazard_root := Node3D.new()
+	hazard_root.name = "ThunderSmokeHazardZone"
+	parent.add_child(hazard_root)
+	hazard_root.global_position = pos
+
+	# Decal cổ ngữ circle_04 + scorch_03 màu tím điện ôm sàn 3.2m (size = 6.4m)
 	var ground_decal := Decal.new()
 	ground_decal.name = "SmokeRuneDecal"
-	ground_decal.size = Vector3(8.0, 4.0, 8.0)
+	ground_decal.size = Vector3(6.4, 3.0, 6.4)
 	ground_decal.texture_albedo = _get_tex("circle_04.png")
-	ground_decal.modulate = Color(0.75, 0.2, 0.9, 0.85)
-	parent.add_child(ground_decal)
-	ground_decal.global_position = pos + Vector3(0.0, 0.15, 0.0)
+	ground_decal.modulate = Color(0.65, 0.25, 1.0, 0.85)
+	hazard_root.add_child(ground_decal)
+	ground_decal.position = Vector3(0.0, 0.15, 0.0)
 
-	var tw_decal := ground_decal.create_tween()
-	tw_decal.tween_interval(2.1)
-	tw_decal.tween_property(ground_decal, "modulate:a", 0.0, 0.4)
-	tw_decal.tween_callback(ground_decal.queue_free)
-
-	# Lớp 3: Đám Mây Khói Ma Thuật Cuộn Xoáy (smoke_04 & smoke_07 Tím Đen dày đặc)
+	# Khói tím ma thuật (smoke_04)
 	var smoke := GPUParticles3D.new()
 	smoke.name = "SmokeCloudZone"
 	smoke.amount = 32
-	smoke.lifetime = 2.2
-	smoke.one_shot = true
-	smoke.explosiveness = 0.82
+	smoke.lifetime = 2.0
+	smoke.explosiveness = 0.75
 	smoke.local_coords = false
 
 	var spmat := ParticleProcessMaterial.new()
 	spmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	spmat.emission_sphere_radius = 2.2
+	spmat.emission_sphere_radius = 2.8
 	spmat.direction = Vector3(0, 1, 0)
-	spmat.spread = 80.0
-	spmat.initial_velocity_min = 1.2
-	spmat.initial_velocity_max = 3.2
-	spmat.gravity = Vector3(0, 0.2, 0)
+	spmat.spread = 70.0
+	spmat.initial_velocity_min = 1.0
+	spmat.initial_velocity_max = 2.5
+	spmat.gravity = Vector3(0, 0.15, 0)
 	spmat.damping_min = 1.5
-	spmat.damping_max = 3.5
+	spmat.damping_max = 3.0
 	spmat.scale_min = 0.8
 	spmat.scale_max = 1.8
 	smoke.process_material = spmat
@@ -13119,27 +12623,24 @@ static func _spawn_smoke_bomb_4layer_detonation(parent: Node, pos: Vector3) -> v
 	var qmesh := get_safe_particle_quad_mesh(Vector2(1.2, 1.2))
 	qmesh.surface_set_material(0, smat)
 	smoke.draw_pass_1 = qmesh
-
-	parent.add_child(smoke)
-	smoke.global_position = pos + Vector3(0.0, 0.5, 0.0)
+	hazard_root.add_child(smoke)
+	smoke.position = Vector3(0.0, 0.5, 0.0)
 	smoke.emitting = true
-	smoke.finished.connect(smoke.queue_free)
 
-	# Lớp 4: Tia Sét Giật Trong Khói (spark_06 giật lách tách)
+	# Tia sét giật trong khói (spark_06)
 	var thunder := GPUParticles3D.new()
 	thunder.name = "SmokeThunderSparks"
 	thunder.amount = 24
 	thunder.lifetime = 0.35
-	thunder.one_shot = false
 	thunder.local_coords = false
 
 	var th_pmat := ParticleProcessMaterial.new()
 	th_pmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	th_pmat.emission_sphere_radius = 3.0
+	th_pmat.emission_sphere_radius = 2.8
 	th_pmat.direction = Vector3(0, 1, 0)
 	th_pmat.spread = 180.0
 	th_pmat.initial_velocity_min = 2.0
-	th_pmat.initial_velocity_max = 5.0
+	th_pmat.initial_velocity_max = 4.5
 	th_pmat.scale_min = 0.25
 	th_pmat.scale_max = 0.55
 	thunder.process_material = th_pmat
@@ -13148,19 +12649,46 @@ static func _spawn_smoke_bomb_4layer_detonation(parent: Node, pos: Vector3) -> v
 	var th_mesh := get_safe_particle_quad_mesh(Vector2(0.5, 0.5))
 	th_mesh.surface_set_material(0, th_mat)
 	thunder.draw_pass_1 = th_mesh
-
-	parent.add_child(thunder)
-	thunder.global_position = pos + Vector3(0.0, 1.0, 0.0)
+	hazard_root.add_child(thunder)
+	thunder.position = Vector3(0.0, 0.8, 0.0)
 	thunder.emitting = true
 
-	# Tắt sét sau 2.5s
-	var tw_thunder := thunder.create_tween()
-	tw_thunder.tween_interval(2.2)
-	tw_thunder.tween_callback(func():
-		thunder.emitting = false
+	# Vòng lặp 8 nhịp (mỗi 0.5s trong 4.0s) gây 8 HP DoT và làm chậm 55%
+	var zone_tween := hazard_root.create_tween()
+	for tick in range(8):
+		zone_tween.tween_interval(0.5)
+		zone_tween.tween_callback(func():
+			if not is_instance_valid(hazard_root):
+				return
+			var current_tree := hazard_root.get_tree()
+			if current_tree == null:
+				return
+			var bots := current_tree.get_nodes_in_group("enemies")
+			for bot in bots:
+				if not is_instance_valid(bot) or not (bot is Node3D):
+					continue
+				var b_pos := (bot as Node3D).global_position
+				var flat_d := Vector2(b_pos.x - pos.x, b_pos.z - pos.z).length()
+				var y_d := absf(b_pos.y - pos.y)
+				if flat_d <= 3.2 and y_d <= 1.8:
+					if bot.has_method("take_dot_damage"):
+						bot.take_dot_damage(8.0, Color(0.75, 0.35, 1.0))
+					elif bot.has_method("take_damage"):
+						bot.take_damage(8.0)
+					if bot.has_method("apply_slow_debuff"):
+						bot.apply_slow_debuff(0.45, 1.0)
+		)
+
+	# Kết thúc 4.0s: Mờ dần decal và hạt rồi dọn dẹp
+	zone_tween.tween_property(ground_decal, "modulate:a", 0.0, 0.4)
+	zone_tween.tween_callback(func():
+		if is_instance_valid(smoke):
+			smoke.emitting = false
+		if is_instance_valid(thunder):
+			thunder.emitting = false
 	)
-	tw_thunder.tween_interval(0.4)
-	tw_thunder.tween_callback(thunder.queue_free)
+	zone_tween.tween_interval(0.5)
+	zone_tween.tween_callback(hazard_root.queue_free)
 
 ## Chiêu 5: Vết Chém Chữ Thập X-Slash Khi Trúng Đòn (Task 20.4 Hit Impact)
 static func spawn_cross_slash_hit_impact(
@@ -16286,6 +15814,286 @@ func _init() -> void:
 
 ```
 
+## 📄 File: src_game/tests/test_phase_21_all_upgrades.gd
+```gdscript
+extends SceneTree
+
+# ==============================================================================
+# TEST PHASE 21: COOLDOWNS, RMB SOLAR CROSS-CLEAVE, WATERTIGHT STAIRS & AIM-SYNC
+# DIRECTIVE 21 (ARGONS & ANTIGRAVITY) — 6 TIÊU CHUẨN KIỂM THỬ BẮT BUỘC:
+#   [TEST 21.1]: E Range Clamp <= 7.55m, Cooldown 6.0s, DoT Damage & 55% Slow
+#   [TEST 21.2]: Q Cooldown 5.0s, Input Buffering (0.18s) & Vacuum Pull
+#   [TEST 21.3]: RMB Solar Cross-Cleave 55.0 DMG (Phase 1 25 DMG + Phase 2 30 DMG)
+#   [TEST 21.4]: Wall Micro-Buffer (>= 0.46m) & Watertight Stair Assembly (16 Angles)
+#   [TEST 21.5]: Combat Aim-Facing Sync (Visual Root Yaw matches aim within < 0.005 rad)
+#   [TEST 21.6]: Zero Primitive Meshes Audit across All 4 Active Skills
+# ==============================================================================
+
+const HeroKnight3D = preload("res://scripts/characters/hero_knight_3d.gd")
+const EnemyMinion3D = preload("res://scripts/enemies/enemy_minion_3d.gd")
+const KayKitVFXManager = preload("res://scripts/vfx/kaykit_vfx_manager.gd")
+const KayKitArenaBuilder = preload("res://scripts/levels/kaykit_arena_builder.gd")
+
+func _init() -> void:
+	print("==================================================================")
+	print("  TEST PHASE 21: ARGONS SKILL COOLDOWNS, RMB OVERHAUL & AIM-SYNC")
+	print("==================================================================")
+
+	var scene_res := load("res://scenes/levels/kaykit_multitier_arena.tscn") as PackedScene
+	if not scene_res:
+		printerr("FAIL: Cannot load arena scene!")
+		quit(1)
+		return
+
+	var arena := scene_res.instantiate()
+	root.add_child(arena)
+
+	for f in range(6):
+		await process_frame
+
+	var hero := arena.get_node_or_null("HeroKnight3D") as HeroKnight3D
+	if not hero:
+		printerr("FAIL: HeroKnight3D not found!")
+		quit(1)
+		return
+
+	var all_pass := true
+
+	# --------------------------------------------------------------------------
+	# TEST 21.1: E RANGE CLAMP <= 7.55m, COOLDOWN 6.0s, DoT & 55% SLOW
+	# --------------------------------------------------------------------------
+	print("\n>>> [TEST 21.1 - CHIÊU E: GIỚI HẠN 7.5M + COOLDOWN 6.0S + DoT & 55% SLOW]...")
+	var test_far_cursor := hero.global_position + Vector3(22.0, 0.0, 0.0)
+	var clamped_target := hero._compute_clamped_bomb_target(test_far_cursor)
+	var actual_dist := Vector2(clamped_target.x - hero.global_position.x, clamped_target.z - hero.global_position.z).length()
+	print("  - Target requested: 22.0m | Clamped target dist: %.2fm" % actual_dist)
+	if actual_dist <= 7.55:
+		print("  PASS: E range clamped successfully (%.2fm <= 7.55m)" % actual_dist)
+	else:
+		printerr("  FAIL: E range clamp exceeded: %.2fm > 7.55m" % actual_dist)
+		all_pass = false
+
+	# Test Cooldown E
+	hero._cd_e_timer = 0.0
+	hero._do_ranged_throw()
+	print("  - After activating E: _cd_e_timer = %.1fs (Expected: 6.0s)" % hero._cd_e_timer)
+	if absf(hero._cd_e_timer - 6.0) < 0.1:
+		print("  PASS: E cooldown is strictly 6.0s")
+	else:
+		printerr("  FAIL: E cooldown is not 6.0s (got %.2f)" % hero._cd_e_timer)
+		all_pass = false
+	hero._is_throwing_e = false
+	hero._action_lock_timer = 0.0
+
+	# Test DoT & Slow on Bot
+	var enemies := get_nodes_in_group("enemies")
+	if enemies.size() > 0:
+		var test_bot := enemies[0] as EnemyMinion3D
+		var hp_before := test_bot.hp
+		test_bot.take_dot_damage(8.0, Color(0.75, 0.35, 1.0))
+		test_bot.apply_slow_debuff(0.45, 1.0)
+		print("  - Bot HP before DoT: %.1f | after DoT: %.1f | slow multiplier: %.2f" % [hp_before, test_bot.hp, test_bot._slow_multiplier])
+		if test_bot.hp <= hp_before - 7.9 and absf(test_bot._slow_multiplier - 0.45) < 0.01:
+			print("  PASS: Bot received 8.0 DoT damage and 55% slow (speed = 45%)")
+		else:
+			printerr("  FAIL: DoT damage or slow debuff mismatch!")
+			all_pass = false
+
+	# --------------------------------------------------------------------------
+	# TEST 21.2: Q COOLDOWN 5.0s, INPUT BUFFERING & VACUUM PULL
+	# --------------------------------------------------------------------------
+	print("\n>>> [TEST 21.2 - CHIÊU Q: KHÓA COOLDOWN 5.0S, INPUT BUFFERING & VACUUM PULL]...")
+	hero._cd_q_timer = 0.0
+	hero._is_spinning_q = false
+	hero._action_lock_timer = 0.0
+	hero._do_spin_attack()
+	print("  - After activating Q: _cd_q_timer = %.1fs (Expected: 5.0s)" % hero._cd_q_timer)
+	if absf(hero._cd_q_timer - 5.0) < 0.1:
+		print("  PASS: Q cooldown is strictly 5.0s")
+	else:
+		printerr("  FAIL: Q cooldown mismatch: %.2f" % hero._cd_q_timer)
+		all_pass = false
+
+	# Try second activation during cooldown
+	hero._cd_q_timer = 4.2
+	hero._is_spinning_q = false
+	hero._action_lock_timer = 0.0
+	hero._do_spin_attack()
+	if hero._cd_q_timer >= 4.1:
+		print("  PASS: Q re-activation while on cooldown is completely blocked")
+	else:
+		printerr("  FAIL: Q cooldown reset prematurely!")
+		all_pass = false
+
+	# Test Input Buffering
+	hero._cd_rmb_timer = 0.12
+	hero._buffered_action = "skill_rmb"
+	hero._buffer_timer = 0.18
+	hero._action_lock_timer = 0.0
+	# Advance 10 physics frames (0.16s)
+	for i in range(10):
+		hero._physics_process(0.016)
+	if hero._cd_rmb_timer >= 3.4 and hero._buffered_action == "":
+		print("  PASS: Input buffering (0.18s) successfully consumed and triggered RMB")
+	else:
+		printerr("  FAIL: Input buffering failed (cd_rmb=%.2f, buff_act=%s)" % [hero._cd_rmb_timer, hero._buffered_action])
+		all_pass = false
+
+	# --------------------------------------------------------------------------
+	# TEST 21.3: RMB SOLAR CROSS-CLEAVE (55.0 DMG: 25 DMG PHASE 1 + 30 DMG PHASE 2)
+	# --------------------------------------------------------------------------
+	print("\n>>> [TEST 21.3 - CHIÊU RMB: THÁNH KIẾM PHÁ KHÔNG TRẢM (55.0 DMG)]...")
+	if enemies.size() > 0:
+		var rmb_bot := enemies[0] as EnemyMinion3D
+		rmb_bot.hp = 80.0
+		rmb_bot.is_dead = false
+		rmb_bot.global_position = hero.global_position + Vector3(0.0, 0.0, 2.5)
+
+		hero._facing_angle = 0.0 # Facing +Z (toward bot)
+		hero._cd_rmb_timer = 0.0
+		hero._action_lock_timer = 0.0
+
+		hero._do_rmb_cross_cleave(Vector3(0.0, 0.0, 1.0))
+		print("  - After Phase 1 (X-Cleave): Bot HP = %.1f (Expected: 55.0)" % rmb_bot.hp)
+		if absf(rmb_bot.hp - 55.0) < 1.0:
+			print("  PASS: Phase 1 dealt 25.0 DMG (80.0 -> 55.0)")
+		else:
+			printerr("  FAIL: Phase 1 damage mismatch: Bot HP = %.1f" % rmb_bot.hp)
+			all_pass = false
+
+		# Advance frames for Phase 2 traveling crescent wave
+		for i in range(12):
+			hero._physics_process(0.016)
+
+		print("  - After Phase 2 (Wave): Bot HP = %.1f (Expected: 25.0)" % rmb_bot.hp)
+		if absf(rmb_bot.hp - 25.0) < 1.0:
+			print("  PASS: Phase 2 dealt 30.0 DMG (Total: 55.0 DMG confirmed)")
+		else:
+			printerr("  FAIL: Total RMB damage mismatch: Bot HP = %.1f" % rmb_bot.hp)
+			all_pass = false
+
+	# --------------------------------------------------------------------------
+	# TEST 21.4: WALL MICRO-BUFFER & WATERTIGHT STAIR ASSEMBLY
+	# --------------------------------------------------------------------------
+	print("\n>>> [TEST 21.4 - ĐỆM CHỐNG LÚN TƯỜNG (>= 0.46M) & WATERTIGHT STAIR ASSEMBLY]...")
+	var hero_shapes := hero.find_children("*", "CollisionShape3D", true, false)
+	if hero_shapes.size() > 0:
+		var rad: float = hero_shapes[0].shape.radius
+		print("  - Hero Capsule radius: %.2fm (Expected: 0.46m) | safe_margin: %.2f" % [rad, hero.safe_margin])
+		if absf(rad - 0.46) < 0.01 and absf(hero.safe_margin - 0.05) < 0.01:
+			print("  PASS: Hero collision shape radius is 0.46m with safe_margin 0.05")
+		else:
+			printerr("  FAIL: Capsule radius or safe_margin mismatch!")
+			all_pass = false
+	else:
+		printerr("  FAIL: Hero has no CollisionShape3D!")
+		all_pass = false
+
+	# Test build_watertight_stair_assembly
+	var test_stair_holder := Node3D.new()
+	arena.add_child(test_stair_holder)
+	var stair_assembly = KayKitArenaBuilder.build_watertight_stair_assembly(
+		test_stair_holder,
+		Vector3(0, 0, 0),
+		Vector3(0, 4.0, 10.0),
+		5.0
+	)
+	var shapes := stair_assembly.find_children("*", "CollisionShape3D", true, false)
+	print("  - Watertight stair collider shapes count: %d (Expected: >= 7: ramp + 2 cheeks + under block + 4 bevels)" % shapes.size())
+	if shapes.size() >= 7:
+		print("  PASS: Watertight stair monolith includes main ramp, side cheeks, under block, and corner funnel bevels")
+	else:
+		printerr("  FAIL: Missing watertight stair collider components (found %d)" % shapes.size())
+		all_pass = false
+	test_stair_holder.queue_free()
+
+	# --------------------------------------------------------------------------
+	# TEST 21.5: COMBAT AIM-FACING SYNC (< 0.005 RAD)
+	# --------------------------------------------------------------------------
+	print("\n>>> [TEST 21.5 - ĐỒNG BỘ XOAY MẶT & HƯỚNG CHÉM COMBAT AIM-FACING SYNC]...")
+	hero._is_throwing_e = false
+	hero._is_spinning_q = false
+	hero._rmb_cleave_timer = 0.0
+	hero._lunge_timer = 0.0
+	hero._action_lock_timer = 0.0
+
+	# Aim directly North: (0, 0, -1)
+	var aim_north := Vector3(0.0, 0.0, -1.0)
+	hero._snap_to_aim_direction(aim_north, 0.30)
+	var expected_yaw := atan2(aim_north.x, aim_north.z)
+	var actual_yaw: float = hero.visual_root.rotation.y
+	var diff_rad := absf(wrapf(actual_yaw - expected_yaw, -PI, PI))
+	print("  - Expected yaw: %.4f rad | Actual visual root yaw: %.4f rad | Diff: %.5f rad" % [expected_yaw, actual_yaw, diff_rad])
+	if diff_rad < 0.005:
+		print("  PASS: Combat aim-facing synced instantaneously within < 0.005 rad")
+	else:
+		printerr("  FAIL: Aim-facing yaw mismatch: diff = %.5f rad" % diff_rad)
+		all_pass = false
+
+	# Verify facing lock resists WASD movement override during attack
+	hero.external_move_dir = Vector3(1.0, 0.0, 0.0) # Moving East
+	hero._physics_process(0.016)
+	var locked_yaw: float = hero.visual_root.rotation.y
+	var lock_diff := absf(wrapf(locked_yaw - expected_yaw, -PI, PI))
+	print("  - Movement override check: locked_yaw: %.4f rad | lock_diff: %.5f rad" % [locked_yaw, lock_diff])
+	if lock_diff < 0.005:
+		print("  PASS: Facing lock prevents WASD movement from overriding attack orientation mid-swing")
+	else:
+		printerr("  FAIL: Facing lock broke during attack! (locked_yaw=%.4f vs expected=%.4f)" % [locked_yaw, expected_yaw])
+		all_pass = false
+	hero.external_move_dir = Vector3.ZERO
+	hero._combat_facing_lock_timer = 0.0
+
+	# --------------------------------------------------------------------------
+	# TEST 21.6: ZERO PRIMITIVE MESHES AUDIT ACROSS ALL ACTIVE SKILLS
+	# --------------------------------------------------------------------------
+	print("\n>>> [TEST 21.6 - ZERO PRIMITIVE MESHES AUDIT ACROSS ALL SKILLS]...")
+	# Spawn all active VFX simultaneously
+	KayKitVFXManager.spawn_combo_slash_vfx(0, hero.global_position, hero._facing_angle)
+	KayKitVFXManager.spawn_combo_slash_vfx(1, hero.global_position, hero._facing_angle)
+	KayKitVFXManager.spawn_combo_slash_vfx(2, hero.global_position, hero._facing_angle)
+	KayKitVFXManager.spawn_rmb_solar_cross_cleave(hero.global_position, hero._facing_angle, arena)
+	KayKitVFXManager.spawn_whirlwind_360_vfx(hero, arena)
+	KayKitVFXManager.spawn_smoke_bomb_hazard_zone(arena, hero.global_position, hero.global_position + Vector3(3.0, 0.0, 0.0))
+
+	await process_frame
+	await process_frame
+
+	var meshes := root.find_children("*", "MeshInstance3D", true, false)
+	var prim_count := 0
+	var array_count := 0
+	for m in meshes:
+		var mi := m as MeshInstance3D
+		if mi and mi.mesh:
+			var cls := mi.mesh.get_class()
+			if cls in ["BoxMesh", "SphereMesh", "CylinderMesh", "CapsuleMesh", "PrismMesh", "TorusMesh", "QuadMesh", "PlaneMesh"]:
+				prim_count += 1
+				printerr("  Found primitive mesh: %s (%s) in node %s" % [mi.name, cls, mi.get_path()])
+			elif cls == "ArrayMesh":
+				array_count += 1
+
+	print("  - Total scanned meshes: %d | ArrayMeshes: %d | PrimitiveMeshes: %d" % [meshes.size(), array_count, prim_count])
+	if prim_count == 0:
+		print("  PASS: ZERO PRIMITIVE MESHES CONFIRMED (primitive_count == 0, PASS 100%)")
+	else:
+		printerr("  FAIL: Found %d PrimitiveMeshes!" % prim_count)
+		all_pass = false
+
+	# --------------------------------------------------------------------------
+	# FINAL RESULT
+	# --------------------------------------------------------------------------
+	print("==================================================================")
+	if all_pass:
+		print("  🏆 ALL 6 TESTS PASSED 100% (ARGONS DIRECTIVE 21 FULLY SATISFIED)!")
+		print("==================================================================")
+		quit(0)
+	else:
+		printerr("  ❌ AT LEAST ONE TEST FAILED IN PHASE 21!")
+		print("==================================================================")
+		quit(1)
+
+```
+
 ## 📄 File: src_game/tests/test_phase_3_5_hero.gd
 ```gdscript
 extends SceneTree
@@ -17610,6 +17418,94 @@ func _process(delta: float) -> bool:
 		var err = img.save_png(save_path)
 		print("==================================================================")
 		print("📸 PHASE 20 SCREENSHOT CAPTURED SUCCESSFULLY:")
+		print("   File: ", save_path)
+		print("   Error code: ", err)
+		print("==================================================================")
+		quit(0)
+		return true
+
+	return false
+
+```
+
+## 📄 File: src_game/tools/capture_phase_21_screenshot.gd
+```gdscript
+extends SceneTree
+
+# ==============================================================================
+# TOOL CAPTURE SCREENSHOT PHASE 21 — GPU RTX 4060 FORWARD+
+# Chụp ảnh thực tế:
+#   - Thánh Kiếm Phá Không Trảm (RMB Solar Cross-Cleave)
+#   - Vùng DoT Lôi Vụ Tím (E Hazard Zone)
+#   - Bot dính hiệu ứng Debuff tím & Thanh máu Crimson Red
+#   - HUD Cooldown Bar ở góc dưới màn hình
+# ==============================================================================
+
+const HeroKnight3D = preload("res://scripts/characters/hero_knight_3d.gd")
+const EnemyMinion3D = preload("res://scripts/enemies/enemy_minion_3d.gd")
+const KayKitVFXManager = preload("res://scripts/vfx/kaykit_vfx_manager.gd")
+
+var frame_count := 0
+var captured := false
+var arena_node: Node = null
+var hero: HeroKnight3D = null
+var minion: EnemyMinion3D = null
+
+func _init() -> void:
+	var sc = ResourceLoader.load("res://scenes/levels/kaykit_multitier_arena.tscn") as PackedScene
+	if sc:
+		arena_node = sc.instantiate()
+		root.add_child(arena_node)
+
+func _process(_delta: float) -> bool:
+	frame_count += 1
+
+	if frame_count == 10:
+		hero = arena_node.get_node_or_null("HeroKnight3D") as HeroKnight3D
+		var enemies := get_nodes_in_group("enemies")
+		if enemies.size() > 0:
+			minion = enemies[0] as EnemyMinion3D
+
+		var cam = arena_node.get_node_or_null("IsometricCamera3D") as Camera3D
+		if cam:
+			cam.size = 9.2 # Tầm nhìn chuẩn Isometric góc chiến đấu
+
+		if hero and minion:
+			hero.global_position = Vector3(0.0, 0.05, 0.0)
+			hero.velocity = Vector3.ZERO
+			hero._facing_angle = deg_to_rad(45.0)
+			if hero.visual_root:
+				hero.visual_root.rotation.y = hero._facing_angle
+
+			minion.global_position = Vector3(2.2, 0.05, 2.2)
+			minion.velocity = Vector3.ZERO
+			if minion.visual_root:
+				minion.visual_root.rotation.y = deg_to_rad(225.0)
+
+			# Bot chịu DoT và làm chậm tím
+			minion.take_dot_damage(16.0, Color(0.75, 0.35, 1.0))
+			minion.apply_slow_debuff(0.45, 3.0)
+
+			# Sinh Vùng khói Lôi Vụ tím (E Hazard Zone) xung quanh khu vực giao tranh
+			KayKitVFXManager.spawn_smoke_bomb_hazard_zone(arena_node, hero.global_position, minion.global_position)
+
+			# Kích hoạt RMB Solar Cross-Cleave rực lửa
+			hero._cd_rmb_timer = 3.5
+			hero._cd_q_timer = 2.4
+			hero._cd_e_timer = 5.8
+			hero._snap_to_aim_direction(Vector3(1.0, 0.0, 1.0).normalized(), 0.40)
+			KayKitVFXManager.spawn_rmb_solar_cross_cleave(hero.global_position, hero._facing_angle, arena_node)
+
+	if frame_count == 28 and not captured:
+		captured = true
+		var vp = root.get_viewport()
+		var img = vp.get_texture().get_image()
+		var save_dir = ProjectSettings.globalize_path("res://../docs/QA_REPORTS/screenshots/")
+		DirAccess.make_dir_recursive_absolute(save_dir)
+		var save_path = save_dir + "phase21_combat_upgrades.png"
+		var err = img.save_png(save_path)
+		print("==================================================================")
+		print("📸 PHASE 21 SCREENSHOT CAPTURED SUCCESSFULLY:")
 		print("   File: ", save_path)
 		print("   Error code: ", err)
 		print("==================================================================")

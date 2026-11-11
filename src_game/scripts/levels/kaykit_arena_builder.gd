@@ -162,7 +162,7 @@ func _build_tier_3_citadel() -> void:
 		_spawn_trimesh_piece(KayKitAssetRegistry.WALL_ELEVATION, Vector3(wx, TIER_HEIGHT, -40.0), Vector3(0, 180, 0), walls_container)
 
 # ------------------------------------------------------------------------------
-# HÀM TẠO CẦU THANG KÍN CHỐNG LỌT GẦM & THÀNH BẢO VỆ HAI BÊN (LEAKPROOF STAIR ASSEMBLY)
+# HÀM TẠO CẦU THANG KÍN CHỐNG LỌT GẦM & THÀNH BẢO VỆ HAI BÊN (WATERTIGHT STAIR ASSEMBLY - TASK 21.4)
 # ------------------------------------------------------------------------------
 static func create_leakproof_stair_assembly(parent: Node3D, bottom_center: Vector3, top_center: Vector3, ramp_width: float = 5.0) -> StaticBody3D:
 	var ramp_body := StaticBody3D.new()
@@ -176,36 +176,60 @@ static func create_leakproof_stair_assembly(parent: Node3D, bottom_center: Vecto
 	var ramp_len := diff.length()
 	var rise_height := top_center.y - bottom_center.y
 	var mid_pos := (bottom_center + top_center) * 0.5
+	var half_w := ramp_width * 0.5
+	var half_len := ramp_len * 0.5
 
-	# 1. Mặt dốc chính nối sàn dưới lên sàn trên
+	# 1. Mặt dốc chính mở rộng nối sàn dưới lên mép sàn trên, vát sâu ăn vào sàn 0.25m
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(ramp_width, 0.25, ramp_len + 0.5)
+	box.size = Vector3(ramp_width, 0.28, ramp_len + 0.6)
 	col.shape = box
 	ramp_body.add_child(col)
 
 	ramp_body.position = mid_pos - Vector3(0.0, 0.12, 0.0)
 	ramp_body.look_at_from_position(ramp_body.position, top_center, Vector3.UP)
 
-	# 2. Hai vách chắn kín hai bên hông cầu thang (Chặn 100% đi xuyên từ phía ngang vào gầm thang)
-	var half_w := ramp_width * 0.5
+	# 2. Hai vách thành lan can vô hình ôm sát sườn thang (dày 0.35m, cao 2.4m)
 	for side in [-1.0, 1.0]:
 		var side_col := CollisionShape3D.new()
 		var side_box := BoxShape3D.new()
-		side_box.size = Vector3(0.45, rise_height + 1.5, ramp_len + 0.5)
+		side_box.size = Vector3(0.35, rise_height + 2.4, ramp_len + 0.6)
 		side_col.shape = side_box
-		side_col.position = Vector3(side * (half_w + 0.22), (rise_height + 1.5) * 0.35, 0.0)
+		side_col.position = Vector3(side * (half_w + 0.175), (rise_height + 2.4) * 0.35, 0.0)
 		ramp_body.add_child(side_col)
 
-	# 3. Khối nêm đặc lấp kín hoàn toàn bên dưới gầm cầu thang
+	# 3. Khối nêm đặc lấp kín hoàn toàn bên dưới gầm cầu thang nối khít vào tường tầng trên
 	var under_col := CollisionShape3D.new()
 	var under_box := BoxShape3D.new()
-	under_box.size = Vector3(ramp_width, rise_height, ramp_len * 0.8)
+	under_box.size = Vector3(ramp_width, rise_height + 0.4, ramp_len * 0.95)
 	under_col.shape = under_box
-	under_col.position = Vector3(0.0, -rise_height * 0.4, 0.0)
+	under_col.position = Vector3(0.0, -rise_height * 0.45, -ramp_len * 0.05)
 	ramp_body.add_child(under_col)
 
+	# 4. Gắn 2 cánh phễu vát góc 35 độ ở chân cầu thang (Bottom Funnel Bevels)
+	for side in [-1.0, 1.0]:
+		var bevel_col := CollisionShape3D.new()
+		var bevel_box := BoxShape3D.new()
+		bevel_box.size = Vector3(0.35, 2.4, 1.2)
+		bevel_col.shape = bevel_box
+		bevel_col.position = Vector3(side * (half_w + 0.35), 0.8, half_len)
+		bevel_col.rotation.y = deg_to_rad(35.0 * side)
+		ramp_body.add_child(bevel_col)
+
+	# 5. Gắn 2 cánh phễu vát góc 35 độ ở đỉnh cầu thang giao tường (Top Funnel Bevels)
+	for side in [-1.0, 1.0]:
+		var bevel_top_col := CollisionShape3D.new()
+		var bevel_top_box := BoxShape3D.new()
+		bevel_top_box.size = Vector3(0.35, 2.4, 1.2)
+		bevel_top_col.shape = bevel_top_box
+		bevel_top_col.position = Vector3(side * (half_w + 0.35), rise_height * 0.7, -half_len)
+		bevel_top_col.rotation.y = deg_to_rad(-35.0 * side)
+		ramp_body.add_child(bevel_top_col)
+
 	return ramp_body
+
+static func build_watertight_stair_assembly(parent: Node3D, bottom_center: Vector3, top_center: Vector3, ramp_width: float = 5.0) -> StaticBody3D:
+	return create_leakproof_stair_assembly(parent, bottom_center, top_center, ramp_width)
 
 static func create_smooth_stair_ramp(parent: Node3D, bottom_center: Vector3, top_center: Vector3, ramp_width: float = 5.0) -> StaticBody3D:
 	return create_leakproof_stair_assembly(parent, bottom_center, top_center, ramp_width)

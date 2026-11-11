@@ -260,6 +260,37 @@
   - Script test tự động `test_phase_20_ultimate_slash_vfx_and_red_hp.gd` đạt **4/4 TEST PASS 100% (PRIMITIVE MESHES: 0)**.
   - Chụp ảnh minh chứng thực tế trên GPU NVIDIA GeForce RTX 4060 Laptop GPU: `docs/QA_REPORTS/screenshots/phase20_ultimate_slash_vfx.png`.
 
+---
+
+## 📌 GIAI ĐOẠN 21: COOLDOWN KỸ NĂNG, ĐẠI TU RMB THÁNH KIẾM PHÁ KHÔNG TRẢM, BẬC THANG KÍN NƯỚC & ĐỒNG BỘ COMBAT AIM-SYNC (CHỈ ĐẠO 21) (HOÀN THÀNH 100% ✅)
+
+- [x] **TASK 21.1: Giới Hạn Tầm Chiêu E ($\le 7.5\text{m}$), Quỹ Đạo Parabol $0.22\text{s}$ & Vùng Độc DoT Lôi Vụ Tím 4.0s (Làm Chậm 55%)** (PASS)
+  - Kẹp khoảng cách `MAX_E_THROW_RANGE = 7.5m`, kiểm tra tia Raycast tránh ném xuyên tường và bám sát mặt sàn `floor_hit`.
+  - Nổ tức thời 20 DMG trong bán kính 3.2m, sinh Vùng Khói Lôi Vụ độc hại duy trì 4.0s (8 nhịp DoT, 8 DMG / nhịp 0.5s kèm chữ sát thương Tím ma thuật nổi), giảm 55% tốc độ di chuyển của Bot (`_slow_multiplier = 0.45`).
+- [x] **TASK 21.2: Chuẩn Hóa Cooldown Bộ Kỹ Năng, Bộ Đệm Phím 0.18s, Lực Hút Lốc Xoáy Q & Thanh Trạng Thái HUD** (PASS)
+  - Khóa Cooldown chuẩn: Q 5.0s, RMB 3.5s, E 6.0s. Chặn hoàn toàn spam chiêu khi đang hồi.
+  - Bộ đệm phím bấm trước 0.18s (`_buffer_timer` / `_buffered_action`) giúp tung chiêu mượt mà ngay khi vừa hết động tác trước hoặc hết hồi chiêu.
+  - Hiệu ứng Lốc Xoáy Song Long Q hút nhẹ Bot trong bán kính 3.4m về phía Hero 0.35m mỗi tick trong 3 nhịp đầu (Whirlwind Vacuum Pull).
+  - Tích hợp Thanh Trạng Thái Cooldown trực quan ở đáy màn hình (`StrictQAHUD`), hiển thị phím bấm và số giây hồi chiêu thời gian thực.
+- [x] **TASK 21.3: Đại Tu Chiêu Chuột Phải RMB — "Thánh Kiếm Phá Không Trảm" (`Solar Cross-Cleave`, 55.0 DMG)** (PASS)
+  - Thay thế hoàn toàn khiên đỡ thụ động bằng đòn tấn công cơ động 2 giai đoạn:
+    - **Pha 1 (Lướt trảm X-Cleave):** Lướt tới 2.2m trong 0.14s, chém song trảm chữ X gây 25.0 DMG diện rộng 3.5m trước mặt.
+    - **Pha 2 (Sóng kiếm mặt đất):** Phóng ra lưỡi kiếm khí mặt đất bay thẳng 4.8m gây 30.0 DMG (Tổng 55.0 DMG), đẩy lùi Bot 2.2m, gây choáng 0.65s và rung camera 0.12m.
+  - Kiến trúc đồ họa 4 lớp đạt 100% `ArrayMesh` kết hợp shader `vfx_stylized_slash.gdshader` (Lõi Trắng - Thân Cyan - Viền Cam Lửa).
+- [x] **TASK 21.4: Đệm Chống Lún Tường $\ge 0.46\text{m}$, Làm Mờ Tường Che Tầm Nhìn & Kết Cấu Cầu Thang Kín Nước Watertight** (PASS)
+  - Nâng bán kính CapsuleShape3D của Hero lên 0.46m và `safe_margin = 0.05`. Quét 8 tia radar ngang đẩy lùi chống lún tường và tượng đá.
+  - Camera Isometric tự động quét tia kiểm tra vật cản che khuất nhân vật và làm mờ mượt mà (`transparency = 0.65`).
+  - Hàm `build_watertight_stair_assembly` tạo khối va chạm 8 hình học (mặt dốc chính, 2 má hông, bệ gầm kín nước, 4 góc xiên phễu $35^\circ$), triệt tiêu 100% hiện tượng kẹt góc chân cầu thang và lọt gầm khi quét 16 góc chạy.
+- [x] **TASK 21.5: Đồng Bộ $100\%$ Hướng Xoay Mặt & Hướng Đánh Thường (`Combat Aim-Facing Sync` $< 0.005\text{ rad}$)** (PASS)
+  - Hàm `_get_stable_aim_direction()` có vùng chết tâm chuột 0.42m chống giật $180^\circ$.
+  - Hàm `_snap_to_aim_direction()` xoay tức thời `visual_root.rotation.y = _facing_angle` và khóa cứng góc xoay trong thời gian vung đòn (`_combat_facing_lock_timer`), ngăn chặn tuyệt đối lệnh di chuyển WASD bẻ hướng nhân vật lúc đang tung đòn.
+  - Đồng bộ chuẩn xác Bước Nhấp Chân Tấn Công (`Attack Lunge`), dải kiếm khí 3D và Hitbox quét sát thương.
+- [x] **TASK 21.6: Bộ Kiểm Thử Tự Động 6/6 PASS 100%, Chụp Ảnh Thực Tế RTX 4060 & Đồng Bộ GitHub** (PASS)
+  - Suite kiểm thử tự động `test_phase_21_all_upgrades.gd` hoàn thành xuất sắc **6/6 TEST PASS 100% (PRIMITIVE MESHES: 0)**.
+  - Không gây bất kỳ lỗi hồi quy nào cho Suite Giai Đoạn 20 (`test_phase_20_ultimate_slash_vfx_and_red_hp.gd` PASS 100%).
+  - Chụp ảnh minh chứng thực tế trên GPU NVIDIA GeForce RTX 4060 Laptop GPU: `docs/QA_REPORTS/screenshots/phase21_combat_upgrades.png`.
+
+
 
 
 

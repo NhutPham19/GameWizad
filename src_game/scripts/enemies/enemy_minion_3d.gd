@@ -11,7 +11,6 @@ extends CharacterBody3D
 
 const KayKitAssetRegistry = preload("res://scripts/core/kaykit_asset_registry.gd")
 const KayKitAnimationBinder = preload("res://scripts/characters/kaykit_animation_binder.gd")
-const KayKitVFXManager = preload("res://scripts/vfx/kaykit_vfx_manager.gd")
 
 @export var max_hp: float = 80.0
 @export var move_speed: float = 4.2
@@ -58,6 +57,8 @@ var _stuck_timer: float = 0.0
 var _hit_stun_timer: float = 0.0
 var _smoke_slow_timer: float = 0.0
 var _smoke_slow_factor: float = 0.0
+var _slow_multiplier: float = 1.0
+var _slow_timer: float = 0.0
 var _avoid_commit_timer: float = 0.0
 var _avoid_commit_sign: float = 1.0
 var _stuck_check_timer: float = 0.0
@@ -87,13 +88,13 @@ func _ready() -> void:
 	floor_stop_on_slope = true
 	floor_constant_speed = true
 	floor_block_on_wall = true
-	safe_margin = 0.04
+	safe_margin = 0.05
 	wall_min_slide_angle = deg_to_rad(10.0)
 
 	var col := CollisionShape3D.new()
 	col.name = "EnemyCollision"
 	var cap := CapsuleShape3D.new()
-	cap.radius = 0.52
+	cap.radius = 0.46
 	cap.height = 1.80
 	col.shape = cap
 	col.position = Vector3(0.0, 0.90, 0.0)
@@ -279,8 +280,13 @@ func _physics_process(delta: float) -> void:
 	# Xử lý lực đẩy lùi khi trúng đòn
 	_knockback_vel = _knockback_vel.move_toward(Vector3.ZERO, 18.0 * delta)
 
-	# Làm chậm do Bom Khói E (Task 19.4 Kỹ thuật B)
-	var current_move_speed := move_speed
+	# Làm chậm do Bom Khói Lôi Vụ E (Task 21.1)
+	if _slow_timer > 0.0:
+		_slow_timer -= delta
+		if _slow_timer <= 0.0:
+			_slow_multiplier = 1.0
+			_set_status_tint(Color.WHITE)
+	var current_move_speed := move_speed * _slow_multiplier
 	if _smoke_slow_timer > 0.0:
 		_smoke_slow_timer -= delta
 		current_move_speed *= (1.0 - _smoke_slow_factor)
@@ -373,6 +379,7 @@ func _physics_process(delta: float) -> void:
 
 	_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 	move_and_slide()
+	_apply_wall_micro_separation(delta)
 
 	# Anti-Stuck Depenetration Guard (Giải cứu kẹt góc tường/vật cản)
 	if get_slide_collision_count() >= 2:
@@ -614,6 +621,56 @@ func apply_smoke_slow(slow_factor: float, duration: float) -> void:
 	_action_lock_timer = 0.4
 	_play_anim_safe("Hit_A")
 
+## Sát thương đốt DoT (Task 21.1)
+func take_dot_damage(amount: float, tint_color: Color = Color(0.75, 0.35, 1.0)) -> void:
+	if is_dead:
+		return
+	hp = maxf(0.0, hp - amount)
+	_update_overhead_hp()
+	_spawn_floating_damage_text(amount, tint_color)
+	KayKitVFXManager.spawn_cross_slash_hit_impact(global_position + Vector3(0.0, 0.95, 0.0))
+	if hp <= 0.0:
+		take_damage(0.0)
+
+## Làm chậm Debuff (Task 21.1)
+func apply_slow_debuff(multiplier: float, duration: float) -> void:
+	if is_dead:
+		return
+	_slow_multiplier = multiplier
+	_slow_timer = maxf(_slow_timer, duration)
+	_set_status_tint(Color(0.55, 0.75, 1.35))
+
+func _set_status_tint(tint: Color) -> void:
+	if visual_root == null:
+		return
+	for m in visual_root.find_children("*", "MeshInstance3D", true, false):
+		var mi := m as MeshInstance3D
+		if mi:
+			if tint == Color.WHITE:
+				mi.material_override = null
+			else:
+				var sm := StandardMaterial3D.new()
+				sm.albedo_color = tint
+				mi.material_override = sm
+
+func _apply_wall_micro_separation(_delta: float) -> void:
+	var space_state := get_world_3d().direct_space_state
+	var chest_origin := global_position + Vector3(0.0, 0.85, 0.0)
+	var min_safe_dist := 0.52
+	for i in range(8):
+		var angle := float(i) * (TAU / 8.0)
+		var dir := Vector3(cos(angle), 0.0, sin(angle))
+		var query := PhysicsRayQueryParameters3D.create(chest_origin, chest_origin + dir * min_safe_dist, 1)
+		query.exclude = [get_rid()]
+		var hit := space_state.intersect_ray(query)
+		if not hit.is_empty():
+			var normal: Vector3 = hit["normal"]
+			if absf(normal.y) < 0.35:
+				var hit_dist := Vector2(chest_origin.x - hit["position"].x, chest_origin.z - hit["position"].z).length()
+				if hit_dist < min_safe_dist:
+					var push_vec := Vector3(normal.x, 0.0, normal.z).normalized() * (min_safe_dist - hit_dist)
+					global_position += push_vec * 0.65
+
 func take_damage(amount: float, knockback_dir: Vector3 = Vector3.ZERO) -> void:
 	if is_dead:
 		return
@@ -649,7 +706,7 @@ func take_damage(amount: float, knockback_dir: Vector3 = Vector3.ZERO) -> void:
 	else:
 		_play_anim_safe("Hit_A")
 
-func _spawn_floating_damage_text(damage_amount: float) -> void:
+func _spawn_floating_damage_text(damage_amount: float, custom_color: Color = Color.TRANSPARENT) -> void:
 	var dmg_label := Label3D.new()
 	dmg_label.name = "FloatingDamageText"
 	dmg_label.text = "-%.0f" % damage_amount
@@ -657,7 +714,10 @@ func _spawn_floating_damage_text(damage_amount: float) -> void:
 	dmg_label.no_depth_test = true
 	dmg_label.font_size = 48
 	dmg_label.outline_size = 12
-	dmg_label.modulate = Color(1.0, 0.85, 0.2)
+	if custom_color != Color.TRANSPARENT:
+		dmg_label.modulate = custom_color
+	else:
+		dmg_label.modulate = Color(1.0, 0.85, 0.2)
 	dmg_label.outline_modulate = Color(0.1, 0.05, 0.0)
 
 	var start_pos := global_position + Vector3(randf_range(-0.25, 0.25), 1.35, randf_range(-0.25, 0.25))

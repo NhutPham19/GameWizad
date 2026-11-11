@@ -507,6 +507,173 @@ static func spawn_shield_bash_vfx(
 	# Vòng sóng xung kích Decal dưới sàn
 	spawn_ground_decal_shockwave(p, origin, 2.5, Color(0.3, 0.7, 1.0, 0.8))
 
+## Chiêu RMB Mới: Thánh Kiếm Phá Không Trảm (Solar Cross-Cleave, Task 21.3)
+static func spawn_rmb_solar_cross_cleave(
+	origin_pos: Vector3,
+	forward_yaw: float,
+	parent_node: Node = null
+) -> Node3D:
+	var p := _get_root_parent(parent_node)
+	if p == null:
+		return null
+
+	var root := Node3D.new()
+	root.name = "SolarCrossCleaveVFX"
+	p.add_child(root)
+	root.global_position = origin_pos
+	root.rotation.y = forward_yaw
+
+	# Màu sắc quy chuẩn Task 21.3:
+	var core_col := Color(4.5, 4.2, 3.5, 1.0) # Trắng Kim Cương HDR
+	var main_col := Color(1.0, 0.72, 0.05, 1.0) # Vàng Thái Dương
+	var edge_col := Color(0.95, 0.12, 0.02, 1.0) # Đỏ Hỏa Ngục
+
+	# LỚP 1: Song Kiếm Khí Chữ Thập 3D (+38 độ và -38 độ)
+	var x_root := Node3D.new()
+	x_root.name = "CrossSlashesRoot"
+	root.add_child(x_root)
+	x_root.position = Vector3(0.0, 0.95, 1.2)
+
+	for tilt in [38.0, -38.0]:
+		var pivot := Node3D.new()
+		pivot.name = "CrossArm_" + str(int(tilt))
+		x_root.add_child(pivot)
+		pivot.rotation.z = deg_to_rad(tilt)
+
+		var arc_mesh := MeshInstance3D.new()
+		arc_mesh.name = "CrossSlashArc"
+		arc_mesh.mesh = build_curved_slash_arc_mesh(0.7, 2.6, 145.0, 26, 0.1)
+		arc_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+		var smat := ShaderMaterial.new()
+		smat.shader = _get_slash_shader()
+		smat.set_shader_parameter("slash_mask_tex", _get_tex("slash_01.png"))
+		smat.set_shader_parameter("core_color", core_col)
+		smat.set_shader_parameter("main_color", main_col)
+		smat.set_shader_parameter("edge_color", edge_col)
+		smat.set_shader_parameter("emission_boost", 4.5)
+		smat.set_shader_parameter("progress", 0.05)
+		arc_mesh.material_override = smat
+		pivot.add_child(arc_mesh)
+
+		var tw_arc := pivot.create_tween().set_parallel(true)
+		tw_arc.tween_method(func(v: float):
+			if is_instance_valid(smat):
+				smat.set_shader_parameter("progress", v)
+		, 0.05, 1.0, 0.28)
+		tw_arc.tween_property(pivot, "rotation:y", deg_to_rad(25.0 if tilt > 0 else -25.0), 0.28).from(deg_to_rad(-15.0 if tilt > 0 else 15.0))
+
+	# Hạt tia lửa chém chữ X
+	_spawn_slash_sparks_burst(x_root, main_col, edge_col, 1.2)
+
+	# LỚP 3: Ấn Chú & Vết Nứt Mặt Đất (circle_02 + scorch_02)
+	var decal_root := Node3D.new()
+	decal_root.name = "CrossGroundDecalRoot"
+	root.add_child(decal_root)
+	decal_root.position = Vector3(0.0, 0.1, 1.2)
+
+	var d1 := Decal.new()
+	d1.name = "SolarCrossDecalRune"
+	d1.size = Vector3(3.2, 2.5, 3.2)
+	d1.texture_albedo = _get_tex("circle_02.png")
+	d1.modulate = Color(1.0, 0.75, 0.15, 0.95)
+	decal_root.add_child(d1)
+
+	var d2 := Decal.new()
+	d2.name = "SolarCrossDecalScorch"
+	d2.size = Vector3(2.8, 2.5, 2.8)
+	d2.texture_albedo = _get_tex("scorch_02.png")
+	d2.modulate = Color(1.0, 0.35, 0.05, 0.9)
+	decal_root.add_child(d2)
+
+	var tw_decal := decal_root.create_tween()
+	tw_decal.tween_interval(0.6)
+	tw_decal.tween_property(d1, "modulate:a", 0.0, 0.4)
+	tw_decal.parallel().tween_property(d2, "modulate:a", 0.0, 0.4)
+	tw_decal.tween_callback(decal_root.queue_free)
+
+	# LỚP 4: OmniLight3D vàng cam
+	var light := OmniLight3D.new()
+	light.name = "SolarCrossLight"
+	light.light_color = Color(1.0, 0.65, 0.1)
+	light.light_energy = 5.0
+	light.omni_range = 6.0
+	root.add_child(light)
+	light.position = Vector3(0.0, 1.0, 1.2)
+
+	var tw_light := light.create_tween()
+	tw_light.tween_property(light, "light_energy", 0.0, 0.22)
+	tw_light.tween_callback(light.queue_free)
+
+	# LỚP 2: Lưỡi Sóng Kiếm Khí Càn Quét Mặt Đất (Forward Traveling Crescent Wave)
+	# Phóng dọc theo hướng trước mặt 4.8m trong 0.22s
+	var wave_root := Node3D.new()
+	wave_root.name = "ForwardCrescentWave"
+	root.add_child(wave_root)
+	wave_root.position = Vector3(0.0, 0.35, 1.2)
+
+	var wave_mesh := MeshInstance3D.new()
+	wave_mesh.name = "WaveCrescentMesh"
+	wave_mesh.mesh = build_curved_slash_arc_mesh(0.4, 1.8, 110.0, 20, 0.05)
+	wave_mesh.rotation.x = deg_to_rad(-80.0)
+	wave_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+	var wave_mat := ShaderMaterial.new()
+	wave_mat.shader = _get_slash_shader()
+	wave_mat.set_shader_parameter("slash_mask_tex", _get_tex("slash_03.png"))
+	wave_mat.set_shader_parameter("core_color", core_col)
+	wave_mat.set_shader_parameter("main_color", main_col)
+	wave_mat.set_shader_parameter("edge_color", edge_col)
+	wave_mat.set_shader_parameter("emission_boost", 5.0)
+	wave_mat.set_shader_parameter("progress", 0.2)
+	wave_mesh.material_override = wave_mat
+	wave_root.add_child(wave_mesh)
+
+	# Hạt tia lửa đuôi bám theo sóng: spark_05.png
+	var wave_sparks := GPUParticles3D.new()
+	wave_sparks.name = "WaveSparks"
+	wave_sparks.amount = 20
+	wave_sparks.lifetime = 0.22
+	wave_sparks.local_coords = false
+
+	var wpmat := ParticleProcessMaterial.new()
+	wpmat.direction = Vector3(0, 0.3, -1)
+	wpmat.spread = 35.0
+	wpmat.initial_velocity_min = 2.0
+	wpmat.initial_velocity_max = 5.0
+	wpmat.gravity = Vector3(0, -3.0, 0)
+	wpmat.scale_min = 0.25
+	wpmat.scale_max = 0.55
+	wave_sparks.process_material = wpmat
+
+	var w_draw_mat := _create_additive_particle_mat(_get_tex("spark_05.png"), Color(1.0, 0.7, 0.2, 1.0))
+	var wqmesh := get_safe_particle_quad_mesh(Vector2(0.45, 0.45))
+	wqmesh.surface_set_material(0, w_draw_mat)
+	wave_sparks.draw_pass_1 = wqmesh
+	wave_root.add_child(wave_sparks)
+	wave_sparks.emitting = true
+
+	# Di chuyển sóng 4.8m trong 0.22s
+	var tw_wave := wave_root.create_tween().set_parallel(true)
+	tw_wave.tween_property(wave_root, "position:z", 1.2 + 4.8, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw_wave.tween_method(func(v: float):
+		if is_instance_valid(wave_mat):
+			wave_mat.set_shader_parameter("progress", v)
+	, 0.2, 1.0, 0.22)
+	tw_wave.chain().tween_callback(func():
+		wave_sparks.emitting = false
+		wave_mesh.visible = false
+	)
+	tw_wave.chain().tween_interval(0.3)
+	tw_wave.tween_callback(wave_root.queue_free)
+
+	# Tự hủy root
+	var tw_root := root.create_tween()
+	tw_root.tween_interval(1.2)
+	tw_root.tween_callback(root.queue_free)
+
+	return root
+
 ## Chiêu 3: Tuyệt chiêu Q — Song Long Lốc Xoáy 360° (Task 20.4 Chiêu Q)
 static func spawn_whirlwind_360_vfx(
 	hero_node: Node3D,
@@ -630,15 +797,15 @@ static func spawn_whirlwind_360_vfx(
 
 	tw.chain().tween_callback(vortex_root.queue_free)
 
-## Chiêu 4: Bom Khói 3D phím E — Ám Ảnh Lôi Vụ 4 Tầng
-static func spawn_smoke_bomb_3d(
+## Chiêu 4: Bom Khói 3D phím E — Vùng Khói Lôi Vụ (Task 21.1)
+static func spawn_smoke_bomb_hazard_zone(
 	parent_node: Node,
 	start_pos: Vector3,
 	target_pos: Vector3
-) -> void:
+) -> Node3D:
 	var p := _get_root_parent(parent_node)
 	if p == null:
-		return
+		return null
 
 	var model_path := "res://assets/weapons/smokebomb.gltf"
 	var scene: PackedScene = null
@@ -659,7 +826,7 @@ static func spawn_smoke_bomb_3d(
 	var trail := GPUParticles3D.new()
 	trail.name = "BombTrail"
 	trail.amount = 16
-	trail.lifetime = 0.25
+	trail.lifetime = 0.22
 	trail.local_coords = false
 
 	var tpmat := ParticleProcessMaterial.new()
@@ -679,22 +846,46 @@ static func spawn_smoke_bomb_3d(
 	proj.add_child(trail)
 	trail.emitting = true
 
-	# Bay theo đường parabol (fly_time = 0.55s)
-	var fly_time := 0.55
+	# Bay theo đường parabol (fly_time = 0.22s theo Task 21.1)
+	var fly_time := 0.22
 	var mid_pos := (start_pos + target_pos) * 0.5
-	mid_pos.y += 3.5
+	mid_pos.y += 2.2
 
 	var tween := proj.create_tween()
 	tween.tween_property(proj, "global_position", mid_pos, fly_time * 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tween.tween_property(proj, "global_position", target_pos, fly_time * 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tween.tween_callback(func():
-		_spawn_smoke_bomb_4layer_detonation(p, target_pos)
+		_detonate_smoke_hazard_zone(p, target_pos)
 		proj.queue_free()
 	)
+	return proj
 
-## Nổ 4 lớp liên hoàn của Ám Ảnh Lôi Vụ
-static func _spawn_smoke_bomb_4layer_detonation(parent: Node, pos: Vector3) -> void:
-	# Lớp 1: Chớp Sáng Tâm Nổ (Sprite3D light_02 + OmniLight3D Tím Điện)
+static func spawn_smoke_bomb_3d(
+	parent_node: Node,
+	start_pos: Vector3,
+	target_pos: Vector3
+) -> void:
+	spawn_smoke_bomb_hazard_zone(parent_node, start_pos, target_pos)
+
+## Kích nổ 4 lớp liên hoàn + Vùng Khói Lôi Vụ DoT & Slow (Task 21.1)
+static func _detonate_smoke_hazard_zone(parent: Node, pos: Vector3) -> void:
+	# 1. Sát thương nổ tức thì 20.0 DMG cho các Bot trong bán kính 3.2m
+	var tree := parent.get_tree()
+	if tree != null:
+		var enemies := tree.get_nodes_in_group("enemies")
+		for bot in enemies:
+			if is_instance_valid(bot) and bot is Node3D:
+				var b_node := bot as Node3D
+				var flat_dist := Vector2(b_node.global_position.x - pos.x, b_node.global_position.z - pos.z).length()
+				var y_diff := absf(b_node.global_position.y - pos.y)
+				if flat_dist <= 3.2 and y_diff <= 1.8:
+					if bot.has_method("take_damage"):
+						var kb: Vector3 = (b_node.global_position - pos).normalized()
+						bot.take_damage(20.0, kb)
+					elif bot.has_method("take_dot_damage"):
+						bot.take_dot_damage(20.0, Color(0.85, 0.35, 1.0))
+
+	# 2. Lớp chớp sáng tâm nổ (Sprite3D light_02 + OmniLight3D tím điện)
 	var flash_sprite := Sprite3D.new()
 	flash_sprite.name = "SmokeDetonationFlash"
 	flash_sprite.texture = _get_tex("light_02.png")
@@ -719,39 +910,39 @@ static func _spawn_smoke_bomb_4layer_detonation(parent: Node, pos: Vector3) -> v
 	tw_flash.chain().tween_callback(flash_sprite.queue_free)
 	tw_flash.parallel().tween_callback(light.queue_free)
 
-	# Lớp 2: Ấn Chú Mặt Đất (Decal circle_04 màu Tím Hồng in chặt trong 2.5s)
+	# 3. VÙNG KHÓI LÔI VỤ HAZARD ZONE (4.0s, Bán kính 3.2m)
+	var hazard_root := Node3D.new()
+	hazard_root.name = "ThunderSmokeHazardZone"
+	parent.add_child(hazard_root)
+	hazard_root.global_position = pos
+
+	# Decal cổ ngữ circle_04 + scorch_03 màu tím điện ôm sàn 3.2m (size = 6.4m)
 	var ground_decal := Decal.new()
 	ground_decal.name = "SmokeRuneDecal"
-	ground_decal.size = Vector3(8.0, 4.0, 8.0)
+	ground_decal.size = Vector3(6.4, 3.0, 6.4)
 	ground_decal.texture_albedo = _get_tex("circle_04.png")
-	ground_decal.modulate = Color(0.75, 0.2, 0.9, 0.85)
-	parent.add_child(ground_decal)
-	ground_decal.global_position = pos + Vector3(0.0, 0.15, 0.0)
+	ground_decal.modulate = Color(0.65, 0.25, 1.0, 0.85)
+	hazard_root.add_child(ground_decal)
+	ground_decal.position = Vector3(0.0, 0.15, 0.0)
 
-	var tw_decal := ground_decal.create_tween()
-	tw_decal.tween_interval(2.1)
-	tw_decal.tween_property(ground_decal, "modulate:a", 0.0, 0.4)
-	tw_decal.tween_callback(ground_decal.queue_free)
-
-	# Lớp 3: Đám Mây Khói Ma Thuật Cuộn Xoáy (smoke_04 & smoke_07 Tím Đen dày đặc)
+	# Khói tím ma thuật (smoke_04)
 	var smoke := GPUParticles3D.new()
 	smoke.name = "SmokeCloudZone"
 	smoke.amount = 32
-	smoke.lifetime = 2.2
-	smoke.one_shot = true
-	smoke.explosiveness = 0.82
+	smoke.lifetime = 2.0
+	smoke.explosiveness = 0.75
 	smoke.local_coords = false
 
 	var spmat := ParticleProcessMaterial.new()
 	spmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	spmat.emission_sphere_radius = 2.2
+	spmat.emission_sphere_radius = 2.8
 	spmat.direction = Vector3(0, 1, 0)
-	spmat.spread = 80.0
-	spmat.initial_velocity_min = 1.2
-	spmat.initial_velocity_max = 3.2
-	spmat.gravity = Vector3(0, 0.2, 0)
+	spmat.spread = 70.0
+	spmat.initial_velocity_min = 1.0
+	spmat.initial_velocity_max = 2.5
+	spmat.gravity = Vector3(0, 0.15, 0)
 	spmat.damping_min = 1.5
-	spmat.damping_max = 3.5
+	spmat.damping_max = 3.0
 	spmat.scale_min = 0.8
 	spmat.scale_max = 1.8
 	smoke.process_material = spmat
@@ -760,27 +951,24 @@ static func _spawn_smoke_bomb_4layer_detonation(parent: Node, pos: Vector3) -> v
 	var qmesh := get_safe_particle_quad_mesh(Vector2(1.2, 1.2))
 	qmesh.surface_set_material(0, smat)
 	smoke.draw_pass_1 = qmesh
-
-	parent.add_child(smoke)
-	smoke.global_position = pos + Vector3(0.0, 0.5, 0.0)
+	hazard_root.add_child(smoke)
+	smoke.position = Vector3(0.0, 0.5, 0.0)
 	smoke.emitting = true
-	smoke.finished.connect(smoke.queue_free)
 
-	# Lớp 4: Tia Sét Giật Trong Khói (spark_06 giật lách tách)
+	# Tia sét giật trong khói (spark_06)
 	var thunder := GPUParticles3D.new()
 	thunder.name = "SmokeThunderSparks"
 	thunder.amount = 24
 	thunder.lifetime = 0.35
-	thunder.one_shot = false
 	thunder.local_coords = false
 
 	var th_pmat := ParticleProcessMaterial.new()
 	th_pmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	th_pmat.emission_sphere_radius = 3.0
+	th_pmat.emission_sphere_radius = 2.8
 	th_pmat.direction = Vector3(0, 1, 0)
 	th_pmat.spread = 180.0
 	th_pmat.initial_velocity_min = 2.0
-	th_pmat.initial_velocity_max = 5.0
+	th_pmat.initial_velocity_max = 4.5
 	th_pmat.scale_min = 0.25
 	th_pmat.scale_max = 0.55
 	thunder.process_material = th_pmat
@@ -789,19 +977,46 @@ static func _spawn_smoke_bomb_4layer_detonation(parent: Node, pos: Vector3) -> v
 	var th_mesh := get_safe_particle_quad_mesh(Vector2(0.5, 0.5))
 	th_mesh.surface_set_material(0, th_mat)
 	thunder.draw_pass_1 = th_mesh
-
-	parent.add_child(thunder)
-	thunder.global_position = pos + Vector3(0.0, 1.0, 0.0)
+	hazard_root.add_child(thunder)
+	thunder.position = Vector3(0.0, 0.8, 0.0)
 	thunder.emitting = true
 
-	# Tắt sét sau 2.5s
-	var tw_thunder := thunder.create_tween()
-	tw_thunder.tween_interval(2.2)
-	tw_thunder.tween_callback(func():
-		thunder.emitting = false
+	# Vòng lặp 8 nhịp (mỗi 0.5s trong 4.0s) gây 8 HP DoT và làm chậm 55%
+	var zone_tween := hazard_root.create_tween()
+	for tick in range(8):
+		zone_tween.tween_interval(0.5)
+		zone_tween.tween_callback(func():
+			if not is_instance_valid(hazard_root):
+				return
+			var current_tree := hazard_root.get_tree()
+			if current_tree == null:
+				return
+			var bots := current_tree.get_nodes_in_group("enemies")
+			for bot in bots:
+				if not is_instance_valid(bot) or not (bot is Node3D):
+					continue
+				var b_pos := (bot as Node3D).global_position
+				var flat_d := Vector2(b_pos.x - pos.x, b_pos.z - pos.z).length()
+				var y_d := absf(b_pos.y - pos.y)
+				if flat_d <= 3.2 and y_d <= 1.8:
+					if bot.has_method("take_dot_damage"):
+						bot.take_dot_damage(8.0, Color(0.75, 0.35, 1.0))
+					elif bot.has_method("take_damage"):
+						bot.take_damage(8.0)
+					if bot.has_method("apply_slow_debuff"):
+						bot.apply_slow_debuff(0.45, 1.0)
+		)
+
+	# Kết thúc 4.0s: Mờ dần decal và hạt rồi dọn dẹp
+	zone_tween.tween_property(ground_decal, "modulate:a", 0.0, 0.4)
+	zone_tween.tween_callback(func():
+		if is_instance_valid(smoke):
+			smoke.emitting = false
+		if is_instance_valid(thunder):
+			thunder.emitting = false
 	)
-	tw_thunder.tween_interval(0.4)
-	tw_thunder.tween_callback(thunder.queue_free)
+	zone_tween.tween_interval(0.5)
+	zone_tween.tween_callback(hazard_root.queue_free)
 
 ## Chiêu 5: Vết Chém Chữ Thập X-Slash Khi Trúng Đòn (Task 20.4 Hit Impact)
 static func spawn_cross_slash_hit_impact(

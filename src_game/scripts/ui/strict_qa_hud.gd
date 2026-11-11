@@ -22,6 +22,7 @@ var hero_hp_bar: ProgressBar
 var hero_hp_label: Label
 var hero_anim_label: Label
 var hero_skills_label: Label
+var skill_cooldown_label: Label
 
 var telemetry_fps_label: Label
 var telemetry_primitive_label: Label
@@ -252,6 +253,47 @@ func _build_ui() -> void:
 	telemetry_enemies_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	r_vbox.add_child(telemetry_enemies_label)
 
+	# --- 4. GIAO DIỆN THANH TRẠNG THÁI SKILL COOLDOWN DƯỚI ĐÁY MÀN HÌNH (Task 21.2) ---
+	var bottom_panel := PanelContainer.new()
+	bottom_panel.name = "SkillCooldownBar"
+	bottom_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bottom_panel.anchor_left = 0.5
+	bottom_panel.anchor_right = 0.5
+	bottom_panel.anchor_top = 1.0
+	bottom_panel.anchor_bottom = 1.0
+	bottom_panel.offset_left = -440.0
+	bottom_panel.offset_right = 440.0
+	bottom_panel.offset_top = -62.0
+	bottom_panel.offset_bottom = -16.0
+
+	var b_style := StyleBoxFlat.new()
+	b_style.bg_color = Color(0.06, 0.08, 0.12, 0.88)
+	b_style.border_width_left = 2
+	b_style.border_width_top = 2
+	b_style.border_width_right = 2
+	b_style.border_width_bottom = 2
+	b_style.border_color = Color(0.3, 0.7, 1.0, 0.85)
+	b_style.corner_radius_top_left = 8
+	b_style.corner_radius_top_right = 8
+	b_style.corner_radius_bottom_right = 8
+	b_style.corner_radius_bottom_left = 8
+	b_style.content_margin_left = 16
+	b_style.content_margin_top = 8
+	b_style.content_margin_right = 16
+	b_style.content_margin_bottom = 8
+	bottom_panel.add_theme_stylebox_override("panel", b_style)
+	overlay_root.add_child(bottom_panel)
+
+	skill_cooldown_label = Label.new()
+	skill_cooldown_label.name = "SkillCooldownLabel"
+	skill_cooldown_label.text = "[LMB] Liên Trảm: SẴN SÀNG  |  [RMB] Phá Không Trảm: SẴN SÀNG  |  [Q] Cuồng Phong 360°: SẴN SÀNG  |  [E] Bom Lôi Vụ (7.5m): SẴN SÀNG"
+	skill_cooldown_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	skill_cooldown_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	skill_cooldown_label.add_theme_font_size_override("font_size", 13)
+	skill_cooldown_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.5))
+	skill_cooldown_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bottom_panel.add_child(skill_cooldown_label)
+
 func _apply_mouse_filter_ignore(node: Node) -> void:
 	if node is Control:
 		if node.name == "RestartButton":
@@ -346,6 +388,22 @@ func _update_telemetry_display(delta: float) -> void:
 		if "blade_tip_marker" in hero and hero.blade_tip_marker and is_instance_valid(hero.blade_tip_marker):
 			var tip: Vector3 = hero.blade_tip_marker.global_position
 			telemetry_blade_label.text = "Blade Tip: (%.2f, %.2f, %.2f)" % [tip.x, tip.y, tip.z]
+
+		# Update Skill Cooldowns (Task 21.2)
+		if skill_cooldown_label != null:
+			var rmb_text := "SẴN SÀNG"
+			if "_cd_rmb_timer" in hero and hero._cd_rmb_timer > 0.05:
+				rmb_text = "CD: %.1fs" % hero._cd_rmb_timer
+
+			var q_text := "SẴN SÀNG"
+			if "_cd_q_timer" in hero and hero._cd_q_timer > 0.05:
+				q_text = "CD: %.1fs" % hero._cd_q_timer
+
+			var e_text := "SẴN SÀNG"
+			if "_cd_e_timer" in hero and hero._cd_e_timer > 0.05:
+				e_text = "CD: %.1fs" % hero._cd_e_timer
+
+			skill_cooldown_label.text = "[LMB] Liên Trảm: SẴN SÀNG   |   [RMB] Phá Không Trảm: %s   |   [Q] Cuồng Phong 360°: %s   |   [E] Bom Lôi Vụ (7.5m): %s" % [rmb_text, q_text, e_text]
 
 	# Enemies count
 	var enemies := get_tree().get_nodes_in_group("enemies")

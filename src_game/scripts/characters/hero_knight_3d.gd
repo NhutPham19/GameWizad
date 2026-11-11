@@ -28,6 +28,10 @@ const SPIN_RANGE: float = 3.5
 const SPIN_DAMAGE: float = 35.0
 const SWORD_TRAIL_DURATION: float = 0.28
 const COMBO_WINDOW: float = 0.45
+const COOLDOWN_Q: float = 5.0
+const COOLDOWN_RMB: float = 3.5
+const COOLDOWN_E: float = 6.0
+const MAX_E_THROW_RANGE: float = 7.5
 
 # --- Animation Names (KayKit 75 anims) ---
 const ANIM_IDLE := "Idle"
@@ -82,6 +86,16 @@ var _throw_timer: float = 0.0
 var _is_throwing_e: bool = false
 var _lunge_timer: float = 0.0
 var _lunge_dir: Vector3 = Vector3.ZERO
+var _cd_q_timer: float = 0.0
+var _cd_rmb_timer: float = 0.0
+var _cd_e_timer: float = 0.0
+var _buffered_action: String = ""
+var _buffer_timer: float = 0.0
+var _facing_angle: float = 0.0
+var _combat_facing_lock_timer: float = 0.0
+var _rmb_cleave_timer: float = 0.0
+var _rmb_cleave_dir: Vector3 = Vector3.ZERO
+var _rmb_wave_spawned: bool = false
 
 # --- Stats ---
 var hp: float = 100.0
@@ -94,20 +108,20 @@ func _ready() -> void:
 	collision_layer = 2
 	collision_mask = 1 | 4
 
-	# --- Cấu hình CharacterBody3D chuẩn leo dốc / cầu thang (Directive 19) ---
+	# --- Cấu hình CharacterBody3D chuẩn leo dốc / cầu thang (Directive 19 & 21) ---
 	floor_snap_length = 0.60
 	floor_max_angle = deg_to_rad(62.0)
 	floor_stop_on_slope = true
 	floor_constant_speed = true
 	floor_block_on_wall = true
-	safe_margin = 0.04
+	safe_margin = 0.05
 	wall_min_slide_angle = deg_to_rad(10.0)
 
 	# --- Collision Shape ---
 	var col_shape := CollisionShape3D.new()
 	col_shape.name = "PlayerCollision"
 	var capsule := CapsuleShape3D.new()
-	capsule.radius = 0.52
+	capsule.radius = 0.46
 	capsule.height = 1.80
 	col_shape.shape = capsule
 	col_shape.position = Vector3(0.0, 0.90, 0.0)
@@ -225,6 +239,51 @@ func _physics_process(delta: float) -> void:
 		if _landing_timer <= 0.0:
 			_jump_state = 0
 
+	# --- Cooldowns (Task 21.1 & 21.2) ---
+	_cd_q_timer = maxf(0.0, _cd_q_timer - delta)
+	_cd_rmb_timer = maxf(0.0, _cd_rmb_timer - delta)
+	_cd_e_timer = maxf(0.0, _cd_e_timer - delta)
+
+	# --- Combat Facing Lock (Task 21.5) ---
+	if _combat_facing_lock_timer > 0.0:
+		_combat_facing_lock_timer -= delta
+		if visual_root != null:
+			visual_root.rotation.y = _facing_angle
+
+	# --- Input Buffer (0.18s, Task 21.2) ---
+	if _buffer_timer > 0.0:
+		_buffer_timer -= delta
+		if _buffered_action != "" and _action_lock_timer <= 0.0:
+			if _buffered_action == "skill_q" and _cd_q_timer <= 0.0 and not _is_spinning_q:
+				_buffered_action = ""
+				_buffer_timer = 0.0
+				_do_spin_attack()
+			elif _buffered_action == "skill_rmb" and _cd_rmb_timer <= 0.0:
+				_buffered_action = ""
+				_buffer_timer = 0.0
+				_do_rmb_cross_cleave()
+			elif _buffered_action == "skill_e" and _cd_e_timer <= 0.0 and not _is_throwing_e:
+				_buffered_action = ""
+				_buffer_timer = 0.0
+				_do_ranged_throw()
+		if _buffer_timer <= 0.0:
+			_buffered_action = ""
+
+	# --- RMB Solar Cross-Cleave Dash (Task 21.3) ---
+	if _rmb_cleave_timer > 0.0:
+		_rmb_cleave_timer -= delta
+		velocity.x = _rmb_cleave_dir.x * 15.7
+		velocity.z = _rmb_cleave_dir.z * 15.7
+		if visual_root:
+			visual_root.rotation.y = _facing_angle
+		_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
+		move_and_slide()
+		if _rmb_cleave_timer <= 0.0 and not _rmb_wave_spawned:
+			_rmb_wave_spawned = true
+			_trigger_rmb_phase_two(_rmb_cleave_dir)
+		_apply_wall_micro_separation(delta)
+		return
+
 	# --- Gravity ---
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
@@ -238,6 +297,7 @@ func _physics_process(delta: float) -> void:
 		_is_spinning_q = false
 		_is_throwing_e = false
 		_lunge_timer = 0.0
+		_rmb_cleave_timer = 0.0
 		_do_dodge()
 		return
 
@@ -276,9 +336,10 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		# Kiểm tra va đập khi lướt vào bot (Task 19.3 Lớp 2)
 		_check_dash_impact_against_enemies()
+		_apply_wall_micro_separation(delta)
 		return
 
-	# --- Xoay Kiếm Q Đang Hoạt Động (Task 19.4 Kỹ thuật B: Vừa di chuyển vừa xoay) ---
+	# --- Xoay Kiếm Q Đang Hoạt Động (Task 19.4 Kỹ thuật B & Task 21.2 Vacuum Pull) ---
 	if _is_spinning_q:
 		_spin_timer -= delta
 		if _spin_timer <= 0.0:
@@ -287,17 +348,33 @@ func _physics_process(delta: float) -> void:
 			if anim_player:
 				anim_player.speed_scale = 1.0
 		else:
+			# Kéo nhẹ Bot về phía nhân vật 0.35m trong 3 nhịp đầu (Whirlwind Vacuum Pull)
+			if _spin_timer > 0.10:
+				var pull_bots := get_tree().get_nodes_in_group("enemies")
+				for pb in pull_bots:
+					if is_instance_valid(pb) and pb is CharacterBody3D and not pb.get("is_dead"):
+						var diff_vec: Vector3 = global_position - (pb as Node3D).global_position
+						diff_vec.y = 0.0
+						var d_len := diff_vec.length()
+						if d_len > 0.4 and d_len <= 3.4:
+							var pull_dir := diff_vec.normalized()
+							(pb as CharacterBody3D).global_position += pull_dir * minf(0.35 * delta * 7.5, d_len - 0.4)
+
 			var spin_mv := _get_movement_input_vector()
 			if spin_mv.length_squared() > 0.01:
 				velocity.x = spin_mv.x * (RUN_SPEED * 0.80)
 				velocity.z = spin_mv.z * (RUN_SPEED * 0.80)
 				if visual_root:
-					visual_root.rotation.y = atan2(spin_mv.x, spin_mv.z)
+					if _combat_facing_lock_timer > 0.0:
+						visual_root.rotation.y = _facing_angle
+					else:
+						visual_root.rotation.y = atan2(spin_mv.x, spin_mv.z)
 			else:
 				velocity.x = 0.0
 				velocity.z = 0.0
 			_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 			move_and_slide()
+			_apply_wall_micro_separation(delta)
 			return
 
 	# --- Ném Bom Khói E Đang Hoạt Động (Task 19.4 Kỹ thuật B: Vừa di chuyển vừa ném) ---
@@ -314,12 +391,16 @@ func _physics_process(delta: float) -> void:
 				velocity.x = throw_mv.x * RUN_SPEED
 				velocity.z = throw_mv.z * RUN_SPEED
 				if visual_root:
-					visual_root.rotation.y = atan2(throw_mv.x, throw_mv.z)
+					if _combat_facing_lock_timer > 0.0:
+						visual_root.rotation.y = _facing_angle
+					else:
+						visual_root.rotation.y = atan2(throw_mv.x, throw_mv.z)
 			else:
 				velocity.x = 0.0
 				velocity.z = 0.0
 			_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 			move_and_slide()
+			_apply_wall_micro_separation(delta)
 			return
 
 	# --- Bước Tấn Công Cận Chiến (Task 19.4 Kỹ thuật A: Step-Lunge 0.14s) ---
@@ -327,42 +408,56 @@ func _physics_process(delta: float) -> void:
 		_lunge_timer -= delta
 		velocity.x = _lunge_dir.x * 6.2
 		velocity.z = _lunge_dir.z * 6.2
-		if visual_root and _lunge_dir.length_squared() > 0.01:
-			visual_root.rotation.y = atan2(_lunge_dir.x, _lunge_dir.z)
+		if visual_root:
+			if _combat_facing_lock_timer > 0.0:
+				visual_root.rotation.y = _facing_angle
+			elif _lunge_dir.length_squared() > 0.01:
+				visual_root.rotation.y = atan2(_lunge_dir.x, _lunge_dir.z)
 		_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 		move_and_slide()
+		_apply_wall_micro_separation(delta)
 		return
 	elif _action_lock_timer > 0.0:
 		# Pha 2 (0.14s -> 0.24s): Đặt trụ vững, chém trúng đích, 0% trượt chân
 		velocity.x = 0.0
 		velocity.z = 0.0
 		move_and_slide()
+		_apply_wall_micro_separation(delta)
 		return
 
 	# --- Input Di Chuyển & Chiến Đấu Bình Thường (can_act) ---
 	var input_dir := _get_movement_input_vector()
 	var can_act: bool = _action_lock_timer <= 0.0 and _jump_state == 0
 
-	# --- Xử lý hành động chiến đấu ---
+	# --- Xử lý hành động chiến đấu & Bộ đệm phím (Task 21.2) ---
+	if Input.is_action_just_pressed("skill_rmb"):
+		if can_act and _cd_rmb_timer <= 0.0:
+			_do_rmb_cross_cleave()
+			return
+		elif _cd_rmb_timer <= 0.18 or _action_lock_timer <= 0.18:
+			_buffered_action = "skill_rmb"
+			_buffer_timer = 0.18
+
+	if Input.is_action_just_pressed("skill_q"):
+		if can_act and _cd_q_timer <= 0.0 and not _is_spinning_q:
+			_do_spin_attack()
+			return
+		elif _cd_q_timer <= 0.18 or _action_lock_timer <= 0.18:
+			_buffered_action = "skill_q"
+			_buffer_timer = 0.18
+
+	if Input.is_action_just_pressed("skill_e"):
+		if can_act and _cd_e_timer <= 0.0 and not _is_throwing_e:
+			_do_ranged_throw()
+			return
+		elif _cd_e_timer <= 0.18 or _action_lock_timer <= 0.18:
+			_buffered_action = "skill_e"
+			_buffer_timer = 0.18
+
 	if can_act:
 		# LMB: Combo Chém 3 Nhịp
 		if Input.is_action_just_pressed("skill_lmb"):
 			_do_melee_combo()
-			return
-
-		# RMB: Block + Counter Stab
-		if Input.is_action_just_pressed("skill_rmb"):
-			_do_block_counter()
-			return
-
-		# Q: Tuyệt chiêu Xoay Kiếm 360
-		if Input.is_action_just_pressed("skill_q"):
-			_do_spin_attack()
-			return
-
-		# E: Phóng đạn 3D
-		if Input.is_action_just_pressed("skill_e"):
-			_do_ranged_throw()
 			return
 
 		# C / Jump: Nhảy
@@ -374,13 +469,18 @@ func _physics_process(delta: float) -> void:
 		if input_dir.length_squared() > 0.01:
 			velocity.x = input_dir.x * RUN_SPEED
 			velocity.z = input_dir.z * RUN_SPEED
-			if visual_root:
+			if _combat_facing_lock_timer <= 0.0:
 				var target_yaw := atan2(input_dir.x, input_dir.z)
-				visual_root.rotation.y = lerp_angle(
-					visual_root.rotation.y,
+				_facing_angle = lerp_angle(
+					_facing_angle,
 					target_yaw,
 					minf(1.0, ROTATION_SPEED * delta)
 				)
+				if visual_root:
+					visual_root.rotation.y = _facing_angle
+			else:
+				if visual_root:
+					visual_root.rotation.y = _facing_angle
 			_play_anim(ANIM_RUN)
 		else:
 			# Dừng ngay lập tức khi thả tay khỏi phím
@@ -431,6 +531,13 @@ func _physics_process(delta: float) -> void:
 			_stuck_timer = 0.0
 	else:
 		_stuck_timer = 0.0
+
+	# Đảm bảo visual_root luôn khóa chặt theo _facing_angle khi combat facing lock còn hiệu lực
+	if visual_root and _combat_facing_lock_timer > 0.0:
+		visual_root.rotation.y = _facing_angle
+
+	# --- Đệm Chống Lún Tường / Tượng 8 Hướng (Task 21.4) ---
+	_apply_wall_micro_separation(delta)
 
 
 # ==============================================================================
@@ -538,11 +645,82 @@ func _check_dash_impact_against_enemies() -> void:
 
 
 # ==============================================================================
-# ACTIONS (TASK 19.4: FLUID COMBAT - 0% KHỰNG, 0% TRƯỢT CHÂN)
+# ACTIONS (TASK 19.4: FLUID COMBAT & DIRECTIVE 21: AIM-FACING SYNC & RMB CLEAVE)
 # ==============================================================================
 
-func _do_melee_combo() -> void:
-	_face_cursor()
+func _get_forward_dir() -> Vector3:
+	return Vector3(sin(_facing_angle), 0.0, cos(_facing_angle)).normalized()
+
+func _get_stable_aim_direction() -> Vector3:
+	var raw_cursor := _get_cursor_world_pos()
+	var diff := Vector3(raw_cursor.x - global_position.x, 0.0, raw_cursor.z - global_position.z)
+	if diff.length() < 0.42:
+		return _get_forward_dir()
+	return diff.normalized()
+
+func _snap_to_aim_direction(aim_dir: Vector3, lock_duration: float = 0.30) -> void:
+	if aim_dir.length_squared() > 0.001:
+		_facing_angle = atan2(aim_dir.x, aim_dir.z)
+		if visual_root != null:
+			visual_root.rotation.y = _facing_angle
+	_combat_facing_lock_timer = maxf(_combat_facing_lock_timer, lock_duration)
+
+func _compute_clamped_bomb_target(raw_cursor_pos: Vector3) -> Vector3:
+	var space_state := get_world_3d().direct_space_state
+	var flat_offset := Vector3(raw_cursor_pos.x - global_position.x, 0.0, raw_cursor_pos.z - global_position.z)
+	var dist := flat_offset.length()
+	if dist > MAX_E_THROW_RANGE:
+		flat_offset = flat_offset.normalized() * MAX_E_THROW_RANGE
+	elif dist < 0.5:
+		flat_offset = _get_forward_dir() * 1.5
+
+	var candidate_xz := global_position + flat_offset
+
+	# 1. Bắn tia ngang ở độ cao ngực (Y + 1.0m) để không ném xuyên qua tường biên
+	var wall_ray := PhysicsRayQueryParameters3D.create(
+		global_position + Vector3(0.0, 1.0, 0.0),
+		candidate_xz + Vector3(0.0, 1.0, 0.0),
+		1
+	)
+	wall_ray.exclude = [get_rid()]
+	var wall_hit := space_state.intersect_ray(wall_ray)
+	if not wall_hit.is_empty():
+		candidate_xz = wall_hit["position"] + wall_hit["normal"] * 0.6
+
+	# 2. Bắn tia từ trên cao xuống để bắt dính chính xác mặt sàn đa tầng
+	var floor_ray := PhysicsRayQueryParameters3D.create(
+		Vector3(candidate_xz.x, maxf(global_position.y, raw_cursor_pos.y) + 10.0, candidate_xz.z),
+		Vector3(candidate_xz.x, -2.0, candidate_xz.z),
+		1
+	)
+	floor_ray.exclude = [get_rid()]
+	var floor_hit := space_state.intersect_ray(floor_ray)
+	if not floor_hit.is_empty():
+		return floor_hit["position"] + Vector3(0.0, 0.05, 0.0)
+	return Vector3(candidate_xz.x, global_position.y, candidate_xz.z)
+
+func _apply_wall_micro_separation(_delta: float) -> void:
+	var space_state := get_world_3d().direct_space_state
+	var chest_origin := global_position + Vector3(0.0, 0.85, 0.0)
+	var min_safe_dist := 0.52
+	for i in range(8):
+		var angle := float(i) * (TAU / 8.0)
+		var dir := Vector3(cos(angle), 0.0, sin(angle))
+		var query := PhysicsRayQueryParameters3D.create(chest_origin, chest_origin + dir * min_safe_dist, 1)
+		query.exclude = [get_rid()]
+		var hit := space_state.intersect_ray(query)
+		if not hit.is_empty():
+			var normal: Vector3 = hit["normal"]
+			if absf(normal.y) < 0.35:
+				var hit_dist := Vector2(chest_origin.x - hit["position"].x, chest_origin.z - hit["position"].z).length()
+				if hit_dist < min_safe_dist:
+					var push_vec := Vector3(normal.x, 0.0, normal.z).normalized() * (min_safe_dist - hit_dist)
+					global_position += push_vec * 0.65
+
+func _do_melee_combo(aim_override: Vector3 = Vector3.ZERO) -> void:
+	var aim_dir := aim_override if aim_override.length_squared() > 0.001 else _get_stable_aim_direction()
+	_snap_to_aim_direction(aim_dir, 0.30)
+	var locked_attack_dir := Vector3(sin(_facing_angle), 0.0, cos(_facing_angle)).normalized()
 
 	var current_step := _combo_index
 	var anim_name: String = COMBO_SEQUENCE[_combo_index]
@@ -550,57 +728,91 @@ func _do_melee_combo() -> void:
 	if anim_player:
 		anim_player.speed_scale = 1.45
 
-	# Pha 1 + Pha 2 tổng thời gian khóa chỉ 0.24s (Cắt bỏ thu kiếm thừa, Task 19.4 Kỹ thuật A)
 	_action_lock_timer = 0.24
 	_start_sword_trail()
 
-	# Hiệu ứng Kiếm Khí Cung Trăng Đa Tầng 3 Nhịp Biến Hóa (Directive 20 Task 20.4)
-	var facing_yaw := visual_root.rotation.y if visual_root else rotation.y
 	var slash_pos := global_position + Vector3(0.0, 0.95, 0.0)
-	KayKitVFXManager.spawn_combo_slash_vfx(current_step, slash_pos, facing_yaw)
+	KayKitVFXManager.spawn_combo_slash_vfx(current_step, slash_pos, _facing_angle)
 
-	# Tính hướng bước tấn công (Attack Step-Lunge trong 0.14s)
-	var lunge_v := _get_raw_physical_movement_input()
-	if lunge_v.length_squared() > 0.01:
-		var cam := get_viewport().get_camera_3d()
-		var cam_right := Vector3.RIGHT
-		var cam_forward := Vector3.BACK
-		if cam != null:
-			cam_right = Vector3(cam.global_transform.basis.x.x, 0.0, cam.global_transform.basis.x.z).normalized()
-			cam_forward = Vector3(-cam.global_transform.basis.z.x, 0.0, -cam.global_transform.basis.z.z).normalized()
-		_lunge_dir = (cam_right * lunge_v.x + cam_forward * (-lunge_v.y)).normalized()
-	elif external_move_dir.length_squared() > 0.01:
-		_lunge_dir = external_move_dir.normalized()
-	elif visual_root:
-		_lunge_dir = Vector3(sin(visual_root.rotation.y), 0.0, cos(visual_root.rotation.y)).normalized()
-	else:
-		_lunge_dir = Vector3.FORWARD
-
+	_lunge_dir = locked_attack_dir
 	_lunge_timer = 0.14
 	_combo_index = (_combo_index + 1) % COMBO_SEQUENCE.size()
 	_combo_timer = COMBO_WINDOW + 0.24
 
-	# Gây sát thương cận chiến ngay lập tức (LMB 25.0 HP)
 	_apply_melee_hit_detection(MELEE_DAMAGE, MELEE_RANGE, false)
 
 
-func _do_block_counter() -> void:
-	_face_cursor()
-	_play_anim(ANIM_BLOCK)
+func _do_rmb_cross_cleave(aim_override: Vector3 = Vector3.ZERO) -> void:
+	if _cd_rmb_timer > 0.0:
+		return
+	_cd_rmb_timer = COOLDOWN_RMB
+
+	var aim_dir := aim_override if aim_override.length_squared() > 0.001 else _get_stable_aim_direction()
+	_snap_to_aim_direction(aim_dir, 0.35)
+	var locked_attack_dir := Vector3(sin(_facing_angle), 0.0, cos(_facing_angle)).normalized()
+
+	_play_anim(ANIM_ATTACK_SLICE_H)
 	if anim_player:
-		anim_player.speed_scale = 1.45
-	_action_lock_timer = 0.24
+		anim_player.speed_scale = 1.6
 
 	_start_sword_trail()
-	var facing_yaw := visual_root.rotation.y if visual_root else rotation.y
-	KayKitVFXManager.spawn_shield_bash_vfx(global_position, facing_yaw)
+	_sword_trail_timer = 0.4
 
-	_apply_melee_hit_detection(20.0, 2.5, false)
-	_knockback_nearby_enemies(2.5, 5.0)
+	_rmb_cleave_timer = 0.14
+	_rmb_cleave_dir = locked_attack_dir
+	_rmb_wave_spawned = false
+	_action_lock_timer = 0.32
+
+	# Phase 1: 25.0 DMG trong quạt 3.5m trước mặt
+	_apply_melee_hit_detection(25.0, 3.5, false)
+
+	# 4-layer VFX (Task 21.3)
+	KayKitVFXManager.spawn_rmb_solar_cross_cleave(global_position, _facing_angle, get_tree().current_scene)
 
 
-func _do_spin_attack() -> void:
-	_face_cursor()
+func _trigger_rmb_phase_two(fwd_dir: Vector3) -> void:
+	var hit_any := false
+	var enemies := get_tree().get_nodes_in_group("enemies")
+	var wave_origin := global_position
+	for enemy in enemies:
+		if not is_instance_valid(enemy) or not (enemy is Node3D):
+			continue
+		var e_node := enemy as Node3D
+		var diff := e_node.global_position - wave_origin
+		diff.y = 0.0
+		var forward_dist := fwd_dir.dot(diff)
+		if forward_dist >= 0.0 and forward_dist <= 5.2:
+			var perp_dist := (diff - fwd_dir * forward_dist).length()
+			if perp_dist <= 2.0 and absf(e_node.global_position.y - wave_origin.y) <= 2.0:
+				hit_any = true
+				if enemy.has_method("take_damage"):
+					enemy.take_damage(30.0, fwd_dir)
+				if enemy.has_method("apply_knockback"):
+					enemy.apply_knockback(fwd_dir * 11.0)
+				if enemy.has_method("apply_hit_stun"):
+					enemy.apply_hit_stun(0.65)
+				KayKitVFXManager.spawn_cross_slash_hit_impact(e_node.global_position + Vector3(0.0, 0.95, 0.0))
+
+	if hit_any:
+		var cam := get_viewport().get_camera_3d()
+		if cam != null and cam.has_method("add_screen_shake"):
+			cam.add_screen_shake(0.12)
+		elif cam != null and cam.has_method("add_shake"):
+			cam.add_shake(0.12)
+
+
+func _do_block_counter() -> void:
+	_do_rmb_cross_cleave()
+
+
+func _do_spin_attack(aim_override: Vector3 = Vector3.ZERO) -> void:
+	if _cd_q_timer > 0.0 or _is_spinning_q:
+		return
+	_cd_q_timer = COOLDOWN_Q
+
+	var aim_dir := aim_override if aim_override.length_squared() > 0.001 else _get_stable_aim_direction()
+	_snap_to_aim_direction(aim_dir, 0.45)
+
 	_play_anim(ANIM_SPIN)
 	if anim_player:
 		anim_player.speed_scale = 1.55
@@ -618,8 +830,20 @@ func _do_spin_attack() -> void:
 	_apply_melee_hit_detection(SPIN_DAMAGE, SPIN_RANGE, true)
 
 
-func _do_ranged_throw() -> void:
-	_face_cursor()
+func _do_ranged_throw(target_pos_override: Vector3 = Vector3.ZERO) -> void:
+	if _cd_e_timer > 0.0 or _is_throwing_e:
+		return
+	_cd_e_timer = COOLDOWN_E
+
+	var raw_cursor := target_pos_override if target_pos_override != Vector3.ZERO else _get_cursor_world_pos()
+	var aim_dir := _get_stable_aim_direction()
+	if target_pos_override != Vector3.ZERO:
+		var d := target_pos_override - global_position
+		d.y = 0.0
+		if d.length_squared() > 0.01:
+			aim_dir = d.normalized()
+	_snap_to_aim_direction(aim_dir, 0.25)
+
 	_play_anim(ANIM_THROW)
 	if anim_player:
 		anim_player.speed_scale = 1.75
@@ -627,19 +851,13 @@ func _do_ranged_throw() -> void:
 	_throw_timer = 0.18
 	_action_lock_timer = 0.18
 
-	var target_pos := _get_cursor_world_pos()
+	var target_pos := _compute_clamped_bomb_target(raw_cursor)
 	var start_pos := global_position + Vector3(0.0, 1.2, 0.0)
 
-	# Ám Ảnh Lôi Vụ 4 tầng (Directive 20 Task 20.4 Chiêu E)
-	KayKitVFXManager.spawn_smoke_bomb_3d(
+	# Ám Ảnh Lôi Vụ 4 tầng & Vùng Khói Lôi Vụ Hazard Zone (Task 21.1)
+	KayKitVFXManager.spawn_smoke_bomb_hazard_zone(
 		get_tree().current_scene, start_pos, target_pos
 	)
-
-	# Làm chậm 60% tốc độ và ngắt đòn đánh của Bot trong bán kính 4.0m (Task 19.4 Kỹ thuật B)
-	for enemy in get_tree().get_nodes_in_group("enemies"):
-		if is_instance_valid(enemy) and (enemy as Node3D).global_position.distance_to(target_pos) <= 4.0:
-			if enemy.has_method("apply_smoke_slow"):
-				enemy.apply_smoke_slow(0.60, 2.5)
 
 
 func _do_dodge() -> void:
