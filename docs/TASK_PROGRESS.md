@@ -236,5 +236,30 @@
   - *Thực thi:* `AGENT-06` (**PASS**)
   - *Chi tiết:* Bổ sung Bài kiểm thử số 18 `_test_directive_12_solaris_and_nyx()` vào `headless_runner.gd`. Thực thi toàn bộ 18 test suites đạt **18/18 PASS (100% Tuyệt đối)**, ghi nhận vào `docs/QA_REPORTS/HEADLESS_TEST_RESULTS.json`. Chạy thực tế GPU NVIDIA GeForce RTX 4060 Laptop GPU với Vulkan Forward+ chụp 4 ảnh minh chứng tại `docs/QA_REPORTS/screenshots/directive_12_solaris_nyx_1.png`, `_2.png`, `_3.png`, `_4.png` chứng minh cả 2 anh hùng hoạt động trơn tru 100%, không còn bất kỳ lỗi hiệu ứng hay giao diện nào!
 
+---
+
+## 📌 GIAI ĐOẠN 20: ĐẠI TU HIỆU ỨNG KIẾM KHÍ 3D (`SLASH FX` ĐA TẦNG), NÂNG CẤP 6 CHIÊU THỨC & THANH MÁU ĐỎ CHO BOT (CHỈ ĐẠO 20) (HOÀN THÀNH 100% ✅)
+
+- [x] **TASK 20.1: Cập Nhật Thanh Máu Trên Đầu Bot (`EnemyMinion3D`) Về Màu Đỏ Huyết Rực Rỡ (#E61E2A) & Lớp Máu Tụt Trễ** (PASS)
+  - Duy nhất 1 cụm thanh máu `OverheadHPHolder` trên đỉnh đầu mỗi con Bot.
+  - Vẽ qua `ImageTexture` động: Khung Đen thẫm (#12131A), Lòng nền đỏ đen (#2A0B0E), Vạch máu chính Đỏ Huyết Rực Rỡ (#E61E2A) có dải bóng (#FF4D58), và Vạch máu tụt trễ màu Trắng Vàng (#FFF2D6) co mượt mà qua delta.
+- [x] **TASK 20.2: Viết Shader Kiếm Khí Đa Tầng `vfx_stylized_slash.gdshader` (Chuẩn Mẫu NoSugarTechArt)** (PASS)
+  - 3 Tầng màu: Lõi Trắng Phát Sáng HDR (`emission_boost = 4.2`), Thân Xanh Băng Điện Tử (#00D8FF), Viền Cam Lửa (#FF7300).
+  - Thuật toán nhiễu xé gió `value_noise` tạo các vệt gió tốc độ cao và bào mòn đuôi kiếm mượt mà theo `progress`.
+- [x] **TASK 20.3: Lõi Lưới Cung Trăng Uốn Cong 3D `ArrayMesh` Trong `KayKitVFXManager` (0% PrimitiveMesh)** (PASS)
+  - Hàm `build_curved_slash_arc_mesh()` và `get_safe_particle_quad_mesh()` cam kết 100% `ArrayMesh`, tuyệt đối không dùng `QuadMesh`, `PlaneMesh` hay bất kỳ `PrimitiveMesh` nào.
+  - `spawn_stylized_crescent_slash()` 5 lớp: Lõi Lưới Cung Trăng + Shader, Dải phụ bóng mờ, Chùm tia lửa, Chớp sáng không gian, Tween diễn hoạt quét kiếm.
+- [x] **TASK 20.4: Nâng Cấp Tối Đa Toàn Bộ 6 Hiệu Ứng Chiêu Thức Của `HeroKnight3D`** (PASS)
+  - 1. LMB Combo 3 Nhịp: Nhịp 1 Cung Trăng Xanh-Cam, Nhịp 2 Song Nha Nghịch Phong Trảm chém chéo + Vệt phụ giao thoa, Nhịp 3 Bổ Dọc Đỏ Hoàng Kim + Địa Chấn Kép Decal (`scorch_02` + `circle_02`) & Cột Lửa `flame_04`.
+  - 2. RMB Khiên Thánh: Ấn Chú Thánh Khiên Dựng Đứng (`circle_01` HDR) xoay tròn phóng to + Luồng xung kích đâm xuyên `twirl_01` + `spark_03`.
+  - 3. Q Lốc Xoáy Song Long 360: Double-Helix Arcs 340° xoắn kép 1080°/s + Trận pháp kép Decal dưới chân xoay ngược chiều + Cột hạt tia lửa bốc xoáy từ chân lên đầu.
+  - 4. E Bom Khói Ám Ảnh Lôi Vụ 4 Tầng: Bom 3D bay parabol gắn đuôi Tím Ngọc, nổ liên hoàn 4 lớp (Chớp sáng tâm nổ, Ấn chú mặt đất 2.5s, Mây khói dày đặc, Tia sét giật lách tách).
+  - 5. Trúng đòn: Chớp Chém Chữ Thập X-Slash (`slash_04` góc +42°/-42°) + Ngôi sao lóe sáng `star_08` + 18 tia lửa `spark_01`.
+  - 6. Space Dash: Vệt gió lướt sát sàn `slash_02` + Sóng va chạm dựng đứng `circle_03` khi húc văng Bot.
+- [x] **TASK 20.5: Kiểm Thử Tự Động PASS 100%, Chụp Ảnh Thực Tế RTX 4060 & Đồng Bộ GitHub** (PASS)
+  - Script test tự động `test_phase_20_ultimate_slash_vfx_and_red_hp.gd` đạt **4/4 TEST PASS 100% (PRIMITIVE MESHES: 0)**.
+  - Chụp ảnh minh chứng thực tế trên GPU NVIDIA GeForce RTX 4060 Laptop GPU: `docs/QA_REPORTS/screenshots/phase20_ultimate_slash_vfx.png`.
+
+
 
 

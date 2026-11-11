@@ -21,6 +21,11 @@ const KayKitVFXManager = preload("res://scripts/vfx/kaykit_vfx_manager.gd")
 @export var attack_cooldown: float = 1.35
 
 var hp: float = 80.0
+var current_hp: float:
+	get:
+		return hp
+	set(v):
+		hp = v
 var is_dead: bool = false
 var _action_lock_timer: float = 0.0
 var _attack_cd_timer: float = 0.0
@@ -39,7 +44,16 @@ var weapon_inst: Node3D = null
 var blade_center_marker: Marker3D = null
 var blade_tip_marker: Marker3D = null
 var axe_trails: Array[GPUParticles3D] = []
-var hp_label_3d: Label3D = null
+var _displayed_lag_hp: float = 80.0
+var _hp_bar_img: Image = null
+var _hp_bar_tex: ImageTexture = null
+var _hp_bar_sprite: Sprite3D = null
+var _hp_label_3d: Label3D = null
+var hp_label_3d: Label3D:
+	get:
+		return _hp_label_3d
+	set(v):
+		_hp_label_3d = v
 var _stuck_timer: float = 0.0
 var _hit_stun_timer: float = 0.0
 var _smoke_slow_timer: float = 0.0
@@ -136,52 +150,85 @@ func _ready() -> void:
 				if blade_center_marker != null and blade_tip_marker != null:
 					axe_trails = KayKitVFXManager.attach_sword_trail_particles(blade_center_marker, blade_tip_marker)
 
-	# 4. Tạo sẵn 1 Label3D nổi phía trên đầu mỗi Bot quái
-	_setup_overhead_ui()
+	# 4. Tạo sẵn 1 Thanh Máu 3D Đỏ Huyết + Vạch Tụt Trễ trên đầu Bot
+	_setup_overhead_health_bar()
 
 	_play_anim_safe("Idle")
 	_action_lock_timer = 0.35
 
 func _setup_overhead_ui() -> void:
-	# Directive 18: Dọn sạch mọi node thanh máu cũ / trùng lặp nếu có
+	_setup_overhead_health_bar()
+
+func _setup_overhead_health_bar() -> void:
+	# Dọn sạch mọi node thanh máu cũ để đảm bảo chỉ có DUY NHẤT 1 thanh máu
 	for child in get_children():
-		if child.name.begins_with("HealthBar") or child.name.begins_with("HPBar") or child.name.begins_with("OverheadHP") or child.name == "OverheadHealthBar3D":
+		if child.name.begins_with("OverheadHP") or child.name.find("HealthBar") != -1 or child.name.begins_with("HPBar"):
 			child.queue_free()
 
-	# Chỉ duy trì DUY NHẤT 1 thanh máu 3D chuẩn trên đầu Bot tại Vector3(0.0, 2.35, 0.0)
-	hp_label_3d = Label3D.new()
-	hp_label_3d.name = "OverheadHealthBar3D"
-	hp_label_3d.position = Vector3(0.0, 2.35, 0.0)
-	hp_label_3d.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	hp_label_3d.no_depth_test = true
-	hp_label_3d.font_size = 38
-	hp_label_3d.outline_size = 10
-	hp_label_3d.outline_modulate = Color(0.0, 0.0, 0.0, 1.0)
-	add_child(hp_label_3d)
-	_update_overhead_hp()
+	var holder := Node3D.new()
+	holder.name = "OverheadHPHolder"
+	holder.position = Vector3(0.0, 2.28, 0.0)
+	add_child(holder)
+
+	_hp_bar_img = Image.create(128, 16, false, Image.FORMAT_RGBA8)
+	_hp_bar_tex = ImageTexture.create_from_image(_hp_bar_img)
+
+	_hp_bar_sprite = Sprite3D.new()
+	_hp_bar_sprite.name = "HPBarSprite3D"
+	_hp_bar_sprite.texture = _hp_bar_tex
+	_hp_bar_sprite.pixel_size = 0.011
+	_hp_bar_sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_hp_bar_sprite.no_depth_test = true
+	_hp_bar_sprite.render_priority = 10
+	holder.add_child(_hp_bar_sprite)
+
+	_hp_label_3d = Label3D.new()
+	_hp_label_3d.name = "HPLabel3D"
+	_hp_label_3d.position = Vector3(0.0, 0.22, 0.0)
+	_hp_label_3d.pixel_size = 0.0045
+	_hp_label_3d.font_size = 32
+	_hp_label_3d.outline_size = 10
+	_hp_label_3d.modulate = Color(1.0, 0.92, 0.92, 1.0)
+	_hp_label_3d.outline_modulate = Color(0.08, 0.02, 0.02, 1.0)
+	_hp_label_3d.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_hp_label_3d.no_depth_test = true
+	holder.add_child(_hp_label_3d)
+
+	_displayed_lag_hp = current_hp
+	_redraw_hp_bar_image()
+
+func _redraw_hp_bar_image() -> void:
+	if _hp_bar_img == null or _hp_bar_tex == null:
+		return
+	var w := 128
+	var h := 16
+	# 1. Khung viền ngoài màu Đen Thẫm (#12131A)
+	_hp_bar_img.fill(Color(0.07, 0.07, 0.10, 0.92))
+	# 2. Lòng nền máu rỗng màu Đỏ Đen tối (#2A0B0E)
+	_hp_bar_img.fill_rect(Rect2i(2, 2, w - 4, h - 4), Color(0.16, 0.04, 0.06, 0.95))
+
+	var max_inner_w := w - 4
+	var hp_ratio := clampf(current_hp / maxf(1.0, max_hp), 0.0, 1.0)
+	var lag_ratio := clampf(_displayed_lag_hp / maxf(1.0, max_hp), hp_ratio, 1.0)
+
+	var red_w := int(round(max_inner_w * hp_ratio))
+	var lag_w := int(round(max_inner_w * lag_ratio))
+
+	# 3. Vạch máu tụt trễ (Catch-up Bar) màu Trắng Vàng phát sáng (#FFF2D6)
+	if lag_w > red_w:
+		_hp_bar_img.fill_rect(Rect2i(2 + red_w, 2, lag_w - red_w, h - 4), Color(1.0, 0.95, 0.82, 1.0))
+
+	# 4. Vạch máu chính màu ĐỎ HUYẾT RỰC RỠ (#E61E2A) có dải sáng bóng phía trên (#FF4D58)
+	if red_w > 0:
+		_hp_bar_img.fill_rect(Rect2i(2, 2, red_w, h - 4), Color(0.90, 0.12, 0.16, 1.0))
+		_hp_bar_img.fill_rect(Rect2i(2, 2, red_w, 4), Color(1.0, 0.32, 0.36, 1.0))
+
+	_hp_bar_tex.update(_hp_bar_img)
+	if _hp_label_3d != null:
+		_hp_label_3d.text = "%d / %d" % [int(ceil(current_hp)), int(max_hp)]
 
 func _update_overhead_hp() -> void:
-	if hp_label_3d == null or not is_instance_valid(hp_label_3d):
-		return
-	if is_dead:
-		hp_label_3d.visible = false
-		return
-	var pct := clampf(hp / max_hp, 0.0, 1.0)
-	var total_blocks := 8
-	var filled := int(round(pct * total_blocks))
-	var bar_str := ""
-	for i in range(total_blocks):
-		if i < filled:
-			bar_str += "█"
-		else:
-			bar_str += "░"
-	hp_label_3d.text = "[%s] %.0f/%.0f HP" % [bar_str, hp, max_hp]
-	if pct > 0.5:
-		hp_label_3d.modulate = Color(0.2, 0.95, 0.35)
-	elif pct > 0.25:
-		hp_label_3d.modulate = Color(1.0, 0.75, 0.2)
-	else:
-		hp_label_3d.modulate = Color(1.0, 0.25, 0.25)
+	_redraw_hp_bar_image()
 
 func _find_skel_fallback(node: Node) -> Skeleton3D:
 	if node is Skeleton3D:
@@ -198,6 +245,11 @@ func _physics_process(delta: float) -> void:
 
 	# Directive 18: Khóa cứng rotation của node CharacterBody3D = Vector3.ZERO
 	rotation = Vector3.ZERO
+
+	# Directive 20: Cập nhật vạch máu tụt trễ (Catch-up Bar) mượt mà
+	if absf(_displayed_lag_hp - current_hp) > 0.05:
+		_displayed_lag_hp = move_toward(_displayed_lag_hp, current_hp, max_hp * 1.45 * delta)
+		_redraw_hp_bar_image()
 
 	# Chốt bảo hiểm phục hồi an toàn chống rơi mép bản đồ
 	if is_on_floor() and global_position.y >= -0.05:
@@ -583,8 +635,13 @@ func take_damage(amount: float, knockback_dir: Vector3 = Vector3.ZERO) -> void:
 		is_dead = true
 		collision_layer = 0
 		collision_mask = 1
-		if hp_label_3d and is_instance_valid(hp_label_3d):
-			hp_label_3d.visible = false
+		var holder = get_node_or_null("OverheadHPHolder")
+		if holder and is_instance_valid(holder):
+			holder.visible = false
+		if _hp_label_3d and is_instance_valid(_hp_label_3d):
+			_hp_label_3d.visible = false
+		if _hp_bar_sprite and is_instance_valid(_hp_bar_sprite):
+			_hp_bar_sprite.visible = false
 		_play_anim_safe("Death_A")
 		var tw := create_tween()
 		tw.tween_interval(1.8)

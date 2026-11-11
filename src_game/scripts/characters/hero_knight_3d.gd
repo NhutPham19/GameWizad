@@ -530,7 +530,9 @@ func _check_dash_impact_against_enemies() -> void:
 								push_dir = _dash_dir
 							near_enemy.apply_dash_impact_knockback(push_dir.normalized() * 14.5, 0.38)
 
-				# 4. Hiệu ứng va chạm
+				# 4. Hiệu ứng va chạm & Sóng Xung Kích (Directive 20 Task 20.4 Chiêu Space)
+				var impact_pt := (global_position + e_node.global_position) * 0.5 + Vector3(0.0, 0.9, 0.0)
+				KayKitVFXManager.spawn_dash_impact(impact_pt, _dash_dir)
 				KayKitVFXManager.spawn_hit_impact_at_chest(e_node)
 				break
 
@@ -542,6 +544,7 @@ func _check_dash_impact_against_enemies() -> void:
 func _do_melee_combo() -> void:
 	_face_cursor()
 
+	var current_step := _combo_index
 	var anim_name: String = COMBO_SEQUENCE[_combo_index]
 	_play_anim(anim_name)
 	if anim_player:
@@ -550,6 +553,11 @@ func _do_melee_combo() -> void:
 	# Pha 1 + Pha 2 tổng thời gian khóa chỉ 0.24s (Cắt bỏ thu kiếm thừa, Task 19.4 Kỹ thuật A)
 	_action_lock_timer = 0.24
 	_start_sword_trail()
+
+	# Hiệu ứng Kiếm Khí Cung Trăng Đa Tầng 3 Nhịp Biến Hóa (Directive 20 Task 20.4)
+	var facing_yaw := visual_root.rotation.y if visual_root else rotation.y
+	var slash_pos := global_position + Vector3(0.0, 0.95, 0.0)
+	KayKitVFXManager.spawn_combo_slash_vfx(current_step, slash_pos, facing_yaw)
 
 	# Tính hướng bước tấn công (Attack Step-Lunge trong 0.14s)
 	var lunge_v := _get_raw_physical_movement_input()
@@ -584,12 +592,8 @@ func _do_block_counter() -> void:
 	_action_lock_timer = 0.24
 
 	_start_sword_trail()
-	KayKitVFXManager.spawn_ground_decal_shockwave(
-		get_tree().current_scene,
-		global_position,
-		2.5,
-		Color(0.3, 0.7, 1.0, 0.8)
-	)
+	var facing_yaw := visual_root.rotation.y if visual_root else rotation.y
+	KayKitVFXManager.spawn_shield_bash_vfx(global_position, facing_yaw)
 
 	_apply_melee_hit_detection(20.0, 2.5, false)
 	_knockback_nearby_enemies(2.5, 5.0)
@@ -607,12 +611,8 @@ func _do_spin_attack() -> void:
 	_start_sword_trail()
 	_sword_trail_timer = 0.6
 
-	KayKitVFXManager.spawn_ground_decal_shockwave(
-		get_tree().current_scene,
-		global_position,
-		SPIN_RANGE,
-		Color(1.0, 0.4, 0.1, 0.9)
-	)
+	# Song Long Lốc Xoáy 360 độ (Directive 20 Task 20.4 Chiêu Q)
+	KayKitVFXManager.spawn_whirlwind_360_vfx(self)
 
 	# Sát thương diện rộng 360 độ
 	_apply_melee_hit_detection(SPIN_DAMAGE, SPIN_RANGE, true)
@@ -630,8 +630,9 @@ func _do_ranged_throw() -> void:
 	var target_pos := _get_cursor_world_pos()
 	var start_pos := global_position + Vector3(0.0, 1.2, 0.0)
 
-	KayKitVFXManager.spawn_kaykit_3d_projectile(
-		get_tree().current_scene, start_pos, target_pos, "smokebomb"
+	# Ám Ảnh Lôi Vụ 4 tầng (Directive 20 Task 20.4 Chiêu E)
+	KayKitVFXManager.spawn_smoke_bomb_3d(
+		get_tree().current_scene, start_pos, target_pos
 	)
 
 	# Làm chậm 60% tốc độ và ngắt đòn đánh của Bot trong bán kính 4.0m (Task 19.4 Kỹ thuật B)
@@ -659,6 +660,7 @@ func _do_dodge() -> void:
 		visual_root.rotation.y = atan2(dodge_dir.x, dodge_dir.z)
 
 	_play_anim(ANIM_DODGE_FWD)
+	KayKitVFXManager.spawn_dash_trail(self, _dash_dir)
 
 
 func _do_jump() -> void:
@@ -723,7 +725,7 @@ func _apply_melee_hit_detection(damage: float, hit_radius: float = 2.8, full_cir
 		if is_valid_hit:
 			var kb_dir := flat_diff.normalized() if dist_to_hero > 0.01 else facing_dir
 			target.take_damage(damage, kb_dir)
-			KayKitVFXManager.spawn_hit_impact_at_chest(t_node)
+			KayKitVFXManager.spawn_cross_slash_hit_impact(t_pos + Vector3(0.0, 0.95, 0.0))
 			hit_enemies.append(target)
 
 	return hit_enemies.size()
