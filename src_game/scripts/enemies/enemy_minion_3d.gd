@@ -41,6 +41,15 @@ var blade_tip_marker: Marker3D = null
 var axe_trails: Array[GPUParticles3D] = []
 var hp_label_3d: Label3D = null
 var _stuck_timer: float = 0.0
+var _hit_stun_timer: float = 0.0
+var _smoke_slow_timer: float = 0.0
+var _smoke_slow_factor: float = 0.0
+var _avoid_commit_timer: float = 0.0
+var _avoid_commit_sign: float = 1.0
+var _stuck_check_timer: float = 0.0
+var _last_stuck_check_pos: Vector3 = Vector3.ZERO
+var _unstuck_recovery_timer: float = 0.0
+var _unstuck_move_dir: Vector3 = Vector3.ZERO
 
 # Định nghĩa các tuyến cầu thang nối 3 tầng
 const STAIR_LINKS = [
@@ -52,6 +61,7 @@ const STAIR_LINKS = [
 func _ready() -> void:
 	hp = max_hp
 	_last_safe_floor_pos = global_position
+	_last_stuck_check_pos = global_position
 	add_to_group("enemies")
 	add_to_group("enemy")
 
@@ -204,8 +214,24 @@ func _physics_process(delta: float) -> void:
 	if _attack_cd_timer > 0.0:
 		_attack_cd_timer -= delta
 
+	# Xử lý Hit-Stun Interrupt (Task 19.4 Kỹ thuật C: Ngắt đòn và khựng 0.35s)
+	if _hit_stun_timer > 0.0:
+		_hit_stun_timer -= delta
+		velocity.x = _knockback_vel.x
+		velocity.z = _knockback_vel.z
+		_knockback_vel = _knockback_vel.move_toward(Vector3.ZERO, 18.0 * delta)
+		_play_anim_safe("Hit_A")
+		move_and_slide()
+		return
+
 	# Xử lý lực đẩy lùi khi trúng đòn
 	_knockback_vel = _knockback_vel.move_toward(Vector3.ZERO, 18.0 * delta)
+
+	# Làm chậm do Bom Khói E (Task 19.4 Kỹ thuật B)
+	var current_move_speed := move_speed
+	if _smoke_slow_timer > 0.0:
+		_smoke_slow_timer -= delta
+		current_move_speed *= (1.0 - _smoke_slow_factor)
 
 	if _action_lock_timer > 0.0:
 		_action_lock_timer -= delta
@@ -232,30 +258,66 @@ func _physics_process(delta: float) -> void:
 	var flat_dist := flat_to_player.length()
 	var y_diff := to_player.y
 
-	# Nếu trong tầm đánh & cùng tầng độ cao (chênh lệch Y < 1.35m)
-	if flat_dist <= attack_range and absf(y_diff) < 1.35:
-		velocity.x = _knockback_vel.x
-		velocity.z = _knockback_vel.z
-		if flat_dist > 0.05:
-			var aim_dir := flat_to_player.normalized()
-			if visual_root:
-				visual_root.rotation.y = lerp_angle(visual_root.rotation.y, atan2(aim_dir.x, aim_dir.z), 18.0 * delta)
+	var desired_move_vel := Vector3.ZERO
+
+	# Lớp 1 — Khoảng Cách Dừng Chiến Đấu (1.45m) & Tự Tách Đội Hình Vòng Cung (Task 19.3)
+	if flat_dist <= 1.45 and absf(y_diff) < 1.2:
+		if flat_dist < 1.10:
+			# Quá sát người chơi -> lùi nhẹ ra sau để nhường khoảng thở
+			var back_dir := -flat_to_player.normalized() if flat_dist > 0.01 else Vector3.BACK
+			desired_move_vel = back_dir * 2.8
+		else:
+			desired_move_vel = Vector3.ZERO
+
 		if _attack_cd_timer <= 0.0:
 			_start_melee_attack()
 		else:
 			_play_anim_safe("Idle")
 	elif dist_3d <= aggro_range:
-		# Multi-Tier Stair Waypoint AI: Khi khác tầng, tự động tìm và chạy qua cầu thang
-		var move_dir := _get_movement_direction(player)
-		velocity.x = move_dir.x * move_speed + _knockback_vel.x
-		velocity.z = move_dir.z * move_speed + _knockback_vel.z
-		if move_dir.length_squared() > 0.01 and visual_root:
-			visual_root.rotation.y = lerp_angle(visual_root.rotation.y, atan2(move_dir.x, move_dir.z), 14.0 * delta)
+		# Multi-Tier Stair Waypoint AI + Cảm Biến 7 Tia Đi Vòng Tránh Vật Cản (Task 19.5)
+		var raw_dir := _get_movement_direction(player)
+		var smart_dir := _compute_obstacle_avoidance_direction(raw_dir, flat_dist, delta)
+		desired_move_vel = smart_dir * current_move_speed
 		_play_anim_safe("Running_A")
+
+		# Bộ Tự Động Gỡ Kẹt (Stuck Detector mỗi 0.35s, Task 19.5 Tầng 2)
+		_stuck_check_timer += delta
+		if _stuck_check_timer >= 0.35:
+			_stuck_check_timer = 0.0
+			var moved_dist := (global_position - _last_stuck_check_pos).length()
+			if moved_dist < 0.12 and desired_move_vel.length_squared() > 0.5:
+				_avoid_commit_sign = -_avoid_commit_sign
+				_unstuck_recovery_timer = 0.55
+				_unstuck_move_dir = raw_dir.rotated(Vector3.UP, deg_to_rad(105.0 * _avoid_commit_sign)).normalized()
+			_last_stuck_check_pos = global_position
 	else:
-		velocity.x = _knockback_vel.x
-		velocity.z = _knockback_vel.z
+		desired_move_vel = Vector3.ZERO
 		_play_anim_safe("Idle")
+
+	# Lực đẩy tách bầy đàn giữa các Bot (Boids Separation Force, Task 19.3 Lớp 1)
+	var separation_vec := Vector3.ZERO
+	for other in get_tree().get_nodes_in_group("enemies"):
+		if other == self or not is_instance_valid(other) or other.get("is_dead"):
+			continue
+		var diff: Vector3 = global_position - (other as Node3D).global_position
+		diff.y = 0.0
+		var d := diff.length()
+		if d > 0.001 and d < 1.35:
+			separation_vec += diff.normalized() * ((1.35 - d) / 1.35) * 4.5
+
+	velocity.x = desired_move_vel.x + separation_vec.x + _knockback_vel.x
+	velocity.z = desired_move_vel.z + separation_vec.z + _knockback_vel.z
+
+	# Tầng 3 — Xoay Mặt Theo Hướng Bước Đi Thực Tế (Velocity-Aligned Facing, Task 19.5 Tầng 3)
+	var horiz_vel := Vector3(velocity.x, 0.0, velocity.z)
+	if horiz_vel.length_squared() > 0.15 and (flat_dist > 2.1 or _avoid_commit_timer > 0.0 or _unstuck_recovery_timer > 0.0 or absf(y_diff) > 1.15):
+		var walk_yaw := atan2(horiz_vel.x, horiz_vel.z)
+		if visual_root:
+			visual_root.rotation.y = lerp_angle(visual_root.rotation.y, walk_yaw, 14.0 * delta)
+	elif flat_dist <= 2.1 and absf(y_diff) <= 1.2:
+		# Khi đã áp sát tầm cận chiến -> xoay trực diện vào người chơi để bổ rìu
+		if flat_dist > 0.05 and visual_root:
+			visual_root.rotation.y = lerp_angle(visual_root.rotation.y, atan2(flat_to_player.x, flat_to_player.z), 18.0 * delta)
 
 	_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 	move_and_slide()
@@ -281,28 +343,87 @@ func _physics_process(delta: float) -> void:
 
 
 # ==============================================================================
+# CẢM BIẾN 7 TIA ĐI VÒNG VẬT CẢN & GHI NHỚ HƯỚNG LÁCH (TASK 19.5 TẦNG 2)
+# ==============================================================================
+func _compute_obstacle_avoidance_direction(desired_dir: Vector3, dist_to_target: float, delta: float) -> Vector3:
+	if desired_dir.length_squared() < 0.001:
+		return Vector3.ZERO
+	var space_state := get_world_3d().direct_space_state
+	var ray_origin := global_position + Vector3(0.0, 0.55, 0.0) # Độ cao ngang hông
+	var probe_dist := clampf(dist_to_target, 1.4, 2.6)
+
+	# 1. Nếu đang trong trạng thái Tự Gỡ Kẹt (Unstuck Recovery)
+	if _unstuck_recovery_timer > 0.0:
+		_unstuck_recovery_timer -= delta
+		return _unstuck_move_dir
+
+	# 2. Kiểm tra tia chính diện (0 độ) và 2 tia vai (-22 độ, +22 độ)
+	var front_blocked := false
+	for check_deg in [0.0, -22.0, 22.0]:
+		var check_dir := desired_dir.rotated(Vector3.UP, deg_to_rad(check_deg))
+		var q := PhysicsRayQueryParameters3D.create(ray_origin, ray_origin + check_dir * probe_dist, 1)
+		q.exclude = [get_rid()]
+		var hit := space_state.intersect_ray(q)
+		if not hit.is_empty():
+			var hit_normal: Vector3 = hit["normal"]
+			if hit_normal.y < 0.55:
+				front_blocked = true
+				break
+
+	if not front_blocked and _avoid_commit_timer <= 0.0:
+		return desired_dir
+
+	# 3. Quét các góc râu cảm biến hai bên để tìm lối đi vòng thông thoáng nhất
+	if _avoid_commit_timer > 0.0:
+		_avoid_commit_timer -= delta
+
+	var candidate_angles := [35.0, -35.0, 65.0, -65.0, 95.0, -95.0, 130.0, -130.0]
+	if _avoid_commit_timer > 0.0:
+		candidate_angles.sort_custom(func(a, b): return (signf(a) == _avoid_commit_sign) and (signf(b) != _avoid_commit_sign))
+
+	var best_dir := desired_dir
+	var best_score := -999.0
+
+	for deg in candidate_angles:
+		var test_dir := desired_dir.rotated(Vector3.UP, deg_to_rad(deg)).normalized()
+		var q := PhysicsRayQueryParameters3D.create(ray_origin, ray_origin + test_dir * (probe_dist + 0.6), 1)
+		q.exclude = [get_rid()]
+		var hit := space_state.intersect_ray(q)
+		var clearance := probe_dist + 0.6
+		if not hit.is_empty() and hit["normal"].y < 0.55:
+			clearance = ray_origin.distance_to(hit["position"])
+
+		var align_score := test_dir.dot(desired_dir) * 1.2
+		var commit_bonus := 0.65 if (signf(deg) == _avoid_commit_sign and _avoid_commit_timer > 0.0) else 0.0
+		var total_score := clearance + align_score + commit_bonus
+		if total_score > best_score and clearance > 1.15:
+			best_score = total_score
+			best_dir = test_dir
+			if front_blocked and _avoid_commit_timer <= 0.0:
+				_avoid_commit_sign = signf(deg)
+				_avoid_commit_timer = 0.65 # Giữ hướng đi vòng tối thiểu 0.65s
+
+	return best_dir
+
+
+# ==============================================================================
 # MULTI-TIER STAIR WAYPOINT AI
 # ==============================================================================
 func _get_movement_direction(player: Node3D) -> Vector3:
 	var my_y := global_position.y
 	var p_y := player.global_position.y
 
-	# Nếu chênh lệch Y > 0.75m: Sử dụng Waypoint cầu thang để leo/xuống tầng
-	if absf(p_y - my_y) > 0.75:
+	# Nếu chênh lệch Y > 1.15m: Sử dụng Waypoint cầu thang để leo/xuống tầng (Task 19.5 Tầng 1)
+	if absf(p_y - my_y) > 1.15:
 		var stair_waypoint := _get_nearest_stair_waypoint(my_y, p_y)
 		var diff := stair_waypoint - global_position
 		diff.y = 0.0
 		if diff.length_squared() > 0.04:
 			return diff.normalized()
 
-	# Cùng tầng hoặc đã tới điểm chuyển tiếp: Sử dụng NavAgent hoặc hướng thẳng tới player
-	nav_agent.target_position = player.global_position
-	var next_pos := nav_agent.get_next_path_position()
-	var move_vec := next_pos - global_position
+	# Cùng tầng hoặc đã tới điểm chuyển tiếp: Hướng thẳng tới player
+	var move_vec := player.global_position - global_position
 	move_vec.y = 0.0
-	if move_vec.length_squared() < 0.01:
-		move_vec = player.global_position - global_position
-		move_vec.y = 0.0
 	return move_vec.normalized() if move_vec.length_squared() > 0.01 else Vector3.ZERO
 
 
@@ -421,6 +542,26 @@ func apply_knockback(force_vec: Vector3) -> void:
 	var flat_kb := Vector3(force_vec.x, 0.0, force_vec.z)
 	_knockback_vel = flat_kb
 
+func apply_dash_impact_knockback(impulse: Vector3, stun_duration: float) -> void:
+	if is_dead:
+		return
+	_knockback_vel = impulse
+	_hit_stun_timer = maxf(_hit_stun_timer, stun_duration)
+	_action_lock_timer = maxf(_action_lock_timer, stun_duration)
+	_is_attacking = false
+	_attack_cd_timer = maxf(_attack_cd_timer, 0.5)
+	_set_axe_trails(false)
+	_play_anim_safe("Hit_A")
+
+func apply_smoke_slow(slow_factor: float, duration: float) -> void:
+	if is_dead:
+		return
+	_smoke_slow_factor = slow_factor
+	_smoke_slow_timer = duration
+	_is_attacking = false
+	_action_lock_timer = 0.4
+	_play_anim_safe("Hit_A")
+
 func take_damage(amount: float, knockback_dir: Vector3 = Vector3.ZERO) -> void:
 	if is_dead:
 		return
@@ -429,11 +570,14 @@ func take_damage(amount: float, knockback_dir: Vector3 = Vector3.ZERO) -> void:
 	_spawn_floating_damage_text(amount)
 	_is_attacking = false
 	_set_axe_trails(false)
+	_hit_stun_timer = 0.35 # Hit-Stun Interrupt ngắt ngay đòn bổ rìu của Bot (Task 19.4 Kỹ thuật C)
+	_action_lock_timer = 0.35
+	_attack_cd_timer = maxf(_attack_cd_timer, 0.4)
 	KayKitVFXManager.spawn_hit_impact_at_chest(self)
 
 	if knockback_dir.length_squared() > 0.001:
 		var flat_kb := Vector3(knockback_dir.x, 0.0, knockback_dir.z).normalized()
-		_knockback_vel = flat_kb * 5.0
+		_knockback_vel = flat_kb * 6.5
 
 	if hp <= 0.0:
 		is_dead = true
@@ -446,7 +590,6 @@ func take_damage(amount: float, knockback_dir: Vector3 = Vector3.ZERO) -> void:
 		tw.tween_interval(1.8)
 		tw.tween_callback(queue_free)
 	else:
-		_action_lock_timer = 0.32
 		_play_anim_safe("Hit_A")
 
 func _spawn_floating_damage_text(damage_amount: float) -> void:

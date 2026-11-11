@@ -73,6 +73,15 @@ var _dash_timer: float = 0.0
 var _last_safe_floor_pos: Vector3 = Vector3(0.0, 0.05, 4.0)
 var external_move_dir: Vector3 = Vector3.ZERO
 var _stuck_timer: float = 0.0
+var _rebound_timer: float = 0.0
+var _rebound_vel: Vector3 = Vector3.ZERO
+var _iframe_timer: float = 0.0
+var _is_spinning_q: bool = false
+var _spin_timer: float = 0.0
+var _throw_timer: float = 0.0
+var _is_throwing_e: bool = false
+var _lunge_timer: float = 0.0
+var _lunge_dir: Vector3 = Vector3.ZERO
 
 # --- Stats ---
 var hp: float = 100.0
@@ -85,9 +94,9 @@ func _ready() -> void:
 	collision_layer = 2
 	collision_mask = 1 | 4
 
-	# --- Cấu hình CharacterBody3D chuẩn leo dốc / cầu thang ---
+	# --- Cấu hình CharacterBody3D chuẩn leo dốc / cầu thang (Directive 19) ---
 	floor_snap_length = 0.60
-	floor_max_angle = deg_to_rad(58.0)
+	floor_max_angle = deg_to_rad(62.0)
 	floor_stop_on_slope = true
 	floor_constant_speed = true
 	floor_block_on_wall = true
@@ -199,6 +208,8 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector3.ZERO
 
 	# --- Timers ---
+	if _iframe_timer > 0.0:
+		_iframe_timer -= delta
 	if _action_lock_timer > 0.0:
 		_action_lock_timer -= delta
 	if _sword_trail_timer > 0.0:
@@ -220,33 +231,117 @@ func _physics_process(delta: float) -> void:
 	elif velocity.y < 0.0:
 		velocity.y = 0.0
 
-	# --- Dash override ---
-	if _dash_timer > 0.0:
-		_dash_timer -= delta
-		velocity.x = _dash_dir.x * DASH_SPEED
-		velocity.z = _dash_dir.z * DASH_SPEED
-		_apply_stair_step_up(_dash_dir, delta)
+	# --- Space: Instant Dash-Cancel (Task 19.4 Kỹ thuật C) ---
+	# Hủy mọi đòn đánh tức thì khi bấm Space để né đòn
+	if Input.is_action_just_pressed("dash"):
+		_action_lock_timer = 0.0
+		_is_spinning_q = false
+		_is_throwing_e = false
+		_lunge_timer = 0.0
+		_do_dodge()
+		return
+
+	# --- Rebound Override (Task 19.3 Lớp 2): Dội ngược khi lướt trúng quái ---
+	if _rebound_timer > 0.0:
+		_rebound_timer -= delta
+		velocity.x = _rebound_vel.x
+		velocity.z = _rebound_vel.z
 		move_and_slide()
 		return
 
-	# --- Input (Đọc trực tiếp phím vật lý chống kẹt Unikey) ---
-	var input_dir := Vector3.ZERO
-	var can_act: bool = _action_lock_timer <= 0.0 and _jump_state == 0
-
-	if can_act:
-		if external_move_dir.length_squared() > 0.01:
-			input_dir = external_move_dir.normalized()
+	# --- Dash Override (Task 19.2 & 19.3) ---
+	if _dash_timer > 0.0:
+		_dash_timer -= delta
+		var effective_dash_speed := DASH_SPEED
+		var on_stair_slope := false
+		if is_on_floor() and get_floor_normal().y < 0.96:
+			on_stair_slope = true
 		else:
-			var input_vec := _get_raw_physical_movement_input()
-			if input_vec.length_squared() > 0.001:
-				var cam := get_viewport().get_camera_3d()
-				var cam_right := Vector3.RIGHT
-				var cam_forward := Vector3.BACK
-				if cam != null:
-					cam_right = Vector3(cam.global_transform.basis.x.x, 0.0, cam.global_transform.basis.x.z).normalized()
-					cam_forward = Vector3(-cam.global_transform.basis.z.x, 0.0, -cam.global_transform.basis.z.z).normalized()
-				# input_vec.y < 0 là W (tiến), input_vec.y > 0 là S (lùi)
-				input_dir = (cam_right * input_vec.x + cam_forward * (-input_vec.y)).normalized()
+			for i in range(get_slide_collision_count()):
+				var col_obj := get_slide_collision(i).get_collider()
+				if col_obj is Node and (col_obj as Node).is_in_group("stairs"):
+					on_stair_slope = true
+					break
+
+		if on_stair_slope:
+			# Giảm hệ số lướt trên dốc cầu thang để tốc độ 3D cân bằng với mặt phẳng (Task 19.2)
+			effective_dash_speed = DASH_SPEED * 0.72
+			velocity.x = _dash_dir.x * effective_dash_speed
+			velocity.z = _dash_dir.z * effective_dash_speed
+			velocity.y = clampf(velocity.y, -4.0, effective_dash_speed * 0.35)
+		else:
+			velocity.x = _dash_dir.x * effective_dash_speed
+			velocity.z = _dash_dir.z * effective_dash_speed
+
+		move_and_slide()
+		# Kiểm tra va đập khi lướt vào bot (Task 19.3 Lớp 2)
+		_check_dash_impact_against_enemies()
+		return
+
+	# --- Xoay Kiếm Q Đang Hoạt Động (Task 19.4 Kỹ thuật B: Vừa di chuyển vừa xoay) ---
+	if _is_spinning_q:
+		_spin_timer -= delta
+		if _spin_timer <= 0.0:
+			_is_spinning_q = false
+			_action_lock_timer = 0.0
+			if anim_player:
+				anim_player.speed_scale = 1.0
+		else:
+			var spin_mv := _get_movement_input_vector()
+			if spin_mv.length_squared() > 0.01:
+				velocity.x = spin_mv.x * (RUN_SPEED * 0.80)
+				velocity.z = spin_mv.z * (RUN_SPEED * 0.80)
+				if visual_root:
+					visual_root.rotation.y = atan2(spin_mv.x, spin_mv.z)
+			else:
+				velocity.x = 0.0
+				velocity.z = 0.0
+			_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
+			move_and_slide()
+			return
+
+	# --- Ném Bom Khói E Đang Hoạt Động (Task 19.4 Kỹ thuật B: Vừa di chuyển vừa ném) ---
+	if _is_throwing_e:
+		_throw_timer -= delta
+		if _throw_timer <= 0.0:
+			_is_throwing_e = false
+			_action_lock_timer = 0.0
+			if anim_player:
+				anim_player.speed_scale = 1.0
+		else:
+			var throw_mv := _get_movement_input_vector()
+			if throw_mv.length_squared() > 0.01:
+				velocity.x = throw_mv.x * RUN_SPEED
+				velocity.z = throw_mv.z * RUN_SPEED
+				if visual_root:
+					visual_root.rotation.y = atan2(throw_mv.x, throw_mv.z)
+			else:
+				velocity.x = 0.0
+				velocity.z = 0.0
+			_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
+			move_and_slide()
+			return
+
+	# --- Bước Tấn Công Cận Chiến (Task 19.4 Kỹ thuật A: Step-Lunge 0.14s) ---
+	if _lunge_timer > 0.0:
+		_lunge_timer -= delta
+		velocity.x = _lunge_dir.x * 6.2
+		velocity.z = _lunge_dir.z * 6.2
+		if visual_root and _lunge_dir.length_squared() > 0.01:
+			visual_root.rotation.y = atan2(_lunge_dir.x, _lunge_dir.z)
+		_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
+		move_and_slide()
+		return
+	elif _action_lock_timer > 0.0:
+		# Pha 2 (0.14s -> 0.24s): Đặt trụ vững, chém trúng đích, 0% trượt chân
+		velocity.x = 0.0
+		velocity.z = 0.0
+		move_and_slide()
+		return
+
+	# --- Input Di Chuyển & Chiến Đấu Bình Thường (can_act) ---
+	var input_dir := _get_movement_input_vector()
+	var can_act: bool = _action_lock_timer <= 0.0 and _jump_state == 0
 
 	# --- Xử lý hành động chiến đấu ---
 	if can_act:
@@ -268,11 +363,6 @@ func _physics_process(delta: float) -> void:
 		# E: Phóng đạn 3D
 		if Input.is_action_just_pressed("skill_e"):
 			_do_ranged_throw()
-			return
-
-		# Space: Lướt né
-		if Input.is_action_just_pressed("dash"):
-			_do_dodge()
 			return
 
 		# C / Jump: Nhảy
@@ -314,6 +404,15 @@ func _physics_process(delta: float) -> void:
 	_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 	move_and_slide()
 
+	# --- Corner Crowd Shove (Task 19.3 Lớp 3: Chen vai đẩy mềm lính khi đi bộ) ---
+	if input_dir.length_squared() > 0.01:
+		for i in range(get_slide_collision_count()):
+			var col := get_slide_collision(i)
+			var col_obj = col.get_collider()
+			if col_obj is Node and (col_obj as Node).is_in_group("enemies"):
+				if col_obj.has_method("apply_knockback"):
+					col_obj.apply_knockback(input_dir * 6.5)
+
 	# --- Anti-Stuck Depenetration Guard (Giải cứu kẹt góc) ---
 	if get_slide_collision_count() >= 2:
 		var horiz_spd := Vector2(velocity.x, velocity.z).length()
@@ -337,8 +436,11 @@ func _physics_process(delta: float) -> void:
 # ==============================================================================
 # HÀM BƯỚC LÊN BẬC THANG TỰ ĐỘNG (_apply_stair_step_up)
 # Giới hạn chỉ kích hoạt khi vật cản phía trước thuộc group "stairs"
+# Khóa hoàn toàn khi đang Dash (Task 19.2)
 # ==============================================================================
 func _apply_stair_step_up(move_dir: Vector3, delta: float) -> void:
+	if _dash_timer > 0.0:
+		return
 	if move_dir.length_squared() < 0.01:
 		return
 	var space_state := get_world_3d().direct_space_state
@@ -376,7 +478,65 @@ func _apply_stair_step_up(move_dir: Vector3, delta: float) -> void:
 
 
 # ==============================================================================
-# ACTIONS
+# HÀM LẤY VECTOR DI CHUYỂN THEO CAMERA HOẶC EXTERNAL
+# ==============================================================================
+func _get_movement_input_vector() -> Vector3:
+	if external_move_dir.length_squared() > 0.01:
+		return external_move_dir.normalized()
+	var input_vec := _get_raw_physical_movement_input()
+	if input_vec.length_squared() > 0.001:
+		var cam := get_viewport().get_camera_3d()
+		var cam_right := Vector3.RIGHT
+		var cam_forward := Vector3.BACK
+		if cam != null:
+			cam_right = Vector3(cam.global_transform.basis.x.x, 0.0, cam.global_transform.basis.x.z).normalized()
+			cam_forward = Vector3(-cam.global_transform.basis.z.x, 0.0, -cam.global_transform.basis.z.z).normalized()
+		return (cam_right * input_vec.x + cam_forward * (-input_vec.y)).normalized()
+	return Vector3.ZERO
+
+
+# ==============================================================================
+# KIỂM TRA VA CHẠM KHI LƯỚT VÀO BOT (DỘI LẠI + HÚC VĂNG BOT)
+# ==============================================================================
+func _check_dash_impact_against_enemies() -> void:
+	var enemies := get_tree().get_nodes_in_group("enemies")
+	for enemy in enemies:
+		if not is_instance_valid(enemy) or enemy.get("is_dead"):
+			continue
+		var e_node := enemy as Node3D
+		var diff := e_node.global_position - global_position
+		diff.y = 0.0
+		var dist := diff.length()
+		if dist <= 1.15:
+			var dot_fwd := _dash_dir.dot(diff.normalized()) if dist > 0.001 else 1.0
+			if dot_fwd >= 0.2:
+				# 1. Chấm dứt đà tiến của cú Lướt ngay lập tức (KHÔNG XUYÊN QUA BOT!)
+				_dash_timer = 0.0
+
+				# 2. Nhân vật bị dội nảy ngược lại phía sau ~0.8m trong 0.16 giây
+				_rebound_timer = 0.16
+				_rebound_vel = -_dash_dir * 6.2
+				velocity.x = _rebound_vel.x
+				velocity.z = _rebound_vel.z
+
+				# 3. Húc văng con Bot bị đụng (và các Bot đứng sát cạnh nó trong bán kính 1.8m) lùi ra xa 2.0m!
+				for near_enemy in enemies:
+					if is_instance_valid(near_enemy) and near_enemy.has_method("apply_dash_impact_knockback"):
+						var ne_node := near_enemy as Node3D
+						if ne_node and (ne_node == e_node or ne_node.global_position.distance_to(e_node.global_position) <= 1.8):
+							var push_dir: Vector3 = ne_node.global_position - global_position
+							push_dir.y = 0.0
+							if push_dir.length_squared() < 0.01:
+								push_dir = _dash_dir
+							near_enemy.apply_dash_impact_knockback(push_dir.normalized() * 14.5, 0.38)
+
+				# 4. Hiệu ứng va chạm
+				KayKitVFXManager.spawn_hit_impact_at_chest(e_node)
+				break
+
+
+# ==============================================================================
+# ACTIONS (TASK 19.4: FLUID COMBAT - 0% KHỰNG, 0% TRƯỢT CHÂN)
 # ==============================================================================
 
 func _do_melee_combo() -> void:
@@ -384,55 +544,65 @@ func _do_melee_combo() -> void:
 
 	var anim_name: String = COMBO_SEQUENCE[_combo_index]
 	_play_anim(anim_name)
+	if anim_player:
+		anim_player.speed_scale = 1.45
 
-	var anim_length: float = _get_anim_length(anim_name)
-	_action_lock_timer = anim_length - 0.05
-
+	# Pha 1 + Pha 2 tổng thời gian khóa chỉ 0.24s (Cắt bỏ thu kiếm thừa, Task 19.4 Kỹ thuật A)
+	_action_lock_timer = 0.24
 	_start_sword_trail()
+
+	# Tính hướng bước tấn công (Attack Step-Lunge trong 0.14s)
+	var lunge_v := _get_raw_physical_movement_input()
+	if lunge_v.length_squared() > 0.01:
+		var cam := get_viewport().get_camera_3d()
+		var cam_right := Vector3.RIGHT
+		var cam_forward := Vector3.BACK
+		if cam != null:
+			cam_right = Vector3(cam.global_transform.basis.x.x, 0.0, cam.global_transform.basis.x.z).normalized()
+			cam_forward = Vector3(-cam.global_transform.basis.z.x, 0.0, -cam.global_transform.basis.z.z).normalized()
+		_lunge_dir = (cam_right * lunge_v.x + cam_forward * (-lunge_v.y)).normalized()
+	elif external_move_dir.length_squared() > 0.01:
+		_lunge_dir = external_move_dir.normalized()
+	elif visual_root:
+		_lunge_dir = Vector3(sin(visual_root.rotation.y), 0.0, cos(visual_root.rotation.y)).normalized()
+	else:
+		_lunge_dir = Vector3.FORWARD
+
+	_lunge_timer = 0.14
+	_combo_index = (_combo_index + 1) % COMBO_SEQUENCE.size()
+	_combo_timer = COMBO_WINDOW + 0.24
 
 	# Gây sát thương cận chiến ngay lập tức (LMB 25.0 HP)
 	_apply_melee_hit_detection(MELEE_DAMAGE, MELEE_RANGE, false)
 
-	_combo_index = (_combo_index + 1) % COMBO_SEQUENCE.size()
-	_combo_timer = COMBO_WINDOW + anim_length
-
-	velocity.x = 0.0
-	velocity.z = 0.0
-
 
 func _do_block_counter() -> void:
 	_face_cursor()
-
 	_play_anim(ANIM_BLOCK)
-	_action_lock_timer = 0.35
+	if anim_player:
+		anim_player.speed_scale = 1.45
+	_action_lock_timer = 0.24
 
-	var timer := get_tree().create_timer(0.35)
-	timer.timeout.connect(func():
-		if _is_dead:
-			return
-		_play_anim(ANIM_ATTACK_STAB)
-		_action_lock_timer = _get_anim_length(ANIM_ATTACK_STAB) - 0.05
-		_start_sword_trail()
-
-		KayKitVFXManager.spawn_ground_decal_shockwave(
-			get_tree().current_scene,
-			global_position,
-			2.5,
-			Color(0.3, 0.7, 1.0, 0.8)
-		)
-
-		_apply_melee_hit_detection(20.0, 2.5, false)
-		_knockback_nearby_enemies(2.5, 5.0)
+	_start_sword_trail()
+	KayKitVFXManager.spawn_ground_decal_shockwave(
+		get_tree().current_scene,
+		global_position,
+		2.5,
+		Color(0.3, 0.7, 1.0, 0.8)
 	)
 
-	velocity.x = 0.0
-	velocity.z = 0.0
+	_apply_melee_hit_detection(20.0, 2.5, false)
+	_knockback_nearby_enemies(2.5, 5.0)
 
 
 func _do_spin_attack() -> void:
 	_face_cursor()
 	_play_anim(ANIM_SPIN)
-	_action_lock_timer = 0.65
+	if anim_player:
+		anim_player.speed_scale = 1.55
+	_is_spinning_q = true
+	_spin_timer = 0.45
+	_action_lock_timer = 0.45
 
 	_start_sword_trail()
 	_sword_trail_timer = 0.6
@@ -447,14 +617,15 @@ func _do_spin_attack() -> void:
 	# Sát thương diện rộng 360 độ
 	_apply_melee_hit_detection(SPIN_DAMAGE, SPIN_RANGE, true)
 
-	velocity.x = 0.0
-	velocity.z = 0.0
-
 
 func _do_ranged_throw() -> void:
 	_face_cursor()
 	_play_anim(ANIM_THROW)
-	_action_lock_timer = _get_anim_length(ANIM_THROW) - 0.05
+	if anim_player:
+		anim_player.speed_scale = 1.75
+	_is_throwing_e = true
+	_throw_timer = 0.18
+	_action_lock_timer = 0.18
 
 	var target_pos := _get_cursor_world_pos()
 	var start_pos := global_position + Vector3(0.0, 1.2, 0.0)
@@ -463,27 +634,15 @@ func _do_ranged_throw() -> void:
 		get_tree().current_scene, start_pos, target_pos, "smokebomb"
 	)
 
-	velocity.x = 0.0
-	velocity.z = 0.0
+	# Làm chậm 60% tốc độ và ngắt đòn đánh của Bot trong bán kính 4.0m (Task 19.4 Kỹ thuật B)
+	for enemy in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(enemy) and (enemy as Node3D).global_position.distance_to(target_pos) <= 4.0:
+			if enemy.has_method("apply_smoke_slow"):
+				enemy.apply_smoke_slow(0.60, 2.5)
 
 
 func _do_dodge() -> void:
-	var cam := get_viewport().get_camera_3d()
-	var dodge_dir := Vector3.ZERO
-	if cam:
-		var cam_basis := cam.global_transform.basis
-		var screen_right := Vector3(cam_basis.x.x, 0.0, cam_basis.x.z).normalized()
-		var screen_up := Vector3(cam_basis.z.x, 0.0, cam_basis.z.z).normalized()
-
-		if Input.is_action_pressed("move_right"):
-			dodge_dir += screen_right
-		if Input.is_action_pressed("move_left"):
-			dodge_dir -= screen_right
-		if Input.is_action_pressed("move_forward"):
-			dodge_dir -= screen_up
-		if Input.is_action_pressed("move_backward"):
-			dodge_dir += screen_up
-
+	var dodge_dir := _get_movement_input_vector()
 	if dodge_dir.length_squared() < 0.01:
 		if visual_root:
 			dodge_dir = Vector3(sin(visual_root.rotation.y), 0.0, cos(visual_root.rotation.y)).normalized()
@@ -494,6 +653,7 @@ func _do_dodge() -> void:
 	_dash_dir = dodge_dir
 	_dash_timer = DASH_DURATION
 	_action_lock_timer = DASH_DURATION
+	_iframe_timer = 0.35 # 0.35s Bất tử (I-Frames, Task 19.4 Kỹ thuật C)
 
 	if visual_root:
 		visual_root.rotation.y = atan2(dodge_dir.x, dodge_dir.z)
@@ -582,17 +742,27 @@ func _knockback_nearby_enemies(radius: float, force: float) -> void:
 					enemy_node.apply_knockback(push_dir * force)
 
 
-## Nhận sát thương
+## Nhận sát thương (Hỗ trợ I-Frames & Hyper-Armor khi xoay kiếm Q)
 func take_damage(amount: float, _from_dir: Vector3 = Vector3.ZERO) -> void:
 	if _is_dead:
 		return
-	hp -= amount
+	# 1. Bất tử khi đang Lướt né (I-Frames, Task 19.4 Kỹ thuật C)
+	if _iframe_timer > 0.0:
+		return
+
+	# 2. Hyper-Armor khi đang Xoay Kiếm Q (Giảm 60% sát thương, Task 19.4 Kỹ thuật B)
+	var final_amount := amount
+	if _is_spinning_q:
+		final_amount *= 0.40
+
+	hp -= final_amount
 	if hp <= 0.0:
 		hp = 0.0
 		_die()
 	else:
-		_play_anim(ANIM_HIT)
-		_action_lock_timer = 0.3
+		if not _is_spinning_q:
+			_play_anim(ANIM_HIT)
+			_action_lock_timer = 0.3
 
 
 func _die() -> void:
@@ -610,6 +780,10 @@ func _die() -> void:
 func _play_anim(anim_name: String) -> void:
 	if anim_player == null:
 		return
+	# Khi quay về Idle hoặc Running_A, hoàn trả tốc độ hoạt ảnh chuẩn 1.0 (Task 19.4)
+	if anim_name == ANIM_IDLE or anim_name == ANIM_RUN:
+		anim_player.speed_scale = 1.0
+
 	if _current_anim == anim_name and anim_player.is_playing():
 		return
 	if anim_player.has_animation(anim_name):

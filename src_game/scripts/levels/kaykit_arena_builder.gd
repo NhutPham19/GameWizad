@@ -423,9 +423,6 @@ func _spawn_trimesh_piece(path: String, pos: Vector3, rot_deg: Vector3, parent: 
 					sb.collision_layer = 1
 					sb.collision_mask = 0
 
-	if parent == walls_container:
-		attach_padded_obstacle_collider(inst, 0.28, 3.5)
-
 	return inst
 
 # ------------------------------------------------------------------------------
@@ -445,8 +442,17 @@ func _spawn_visual_only_piece(path: String, pos: Vector3, rot_deg: Vector3, pare
 
 # ------------------------------------------------------------------------------
 # HÀM TẠO VA CHẠM VẬT LÝ CONVEX CHO VẬT CẢN (LAYER 1)
+# Bỏ qua 100% va chạm cho Đuốc và Đạo cụ nhỏ trang trí (Task 19.1)
 # ------------------------------------------------------------------------------
 func _spawn_convex_piece(path: String, pos: Vector3, rot_deg: Vector3, parent: Node, scale_factor: float = 1.0) -> Node3D:
+	var path_lower := path.to_lower()
+	for skip_token in ["torch", "light", "grass", "pebble", "banner", "flag"]:
+		if path_lower.contains(skip_token):
+			var visual_piece := _spawn_visual_only_piece(path, pos, rot_deg, parent)
+			if visual_piece and scale_factor != 1.0:
+				visual_piece.scale = Vector3.ONE * scale_factor
+			return visual_piece
+
 	var sc: PackedScene = ResourceLoader.load(path) as PackedScene
 	if sc == null:
 		push_error("Failed to load convex piece: " + path)
@@ -474,11 +480,12 @@ func _spawn_convex_piece(path: String, pos: Vector3, rot_deg: Vector3, parent: N
 	return inst
 
 # ------------------------------------------------------------------------------
-# ĐUỐC KÈM ÁNH SÁNG OMNILIGHT3D ẤM ÁP
+# ĐUỐC KÈM ÁNH SÁNG OMNILIGHT3D ẤM ÁP (HOÀN TOÀN VISUAL ONLY - 0% VA CHẠM)
 # ------------------------------------------------------------------------------
 func _spawn_torch_with_light(pos: Vector3, parent: Node) -> void:
-	var torch_inst := _spawn_convex_piece(KayKitAssetRegistry.PROP_TORCH, pos, Vector3.ZERO, parent, 1.8)
+	var torch_inst := _spawn_visual_only_piece(KayKitAssetRegistry.PROP_TORCH, pos, Vector3.ZERO, parent)
 	if torch_inst:
+		torch_inst.scale = Vector3.ONE * 1.8
 		var light := OmniLight3D.new()
 		light.name = "TorchLight"
 		light.light_color = Color(1.0, 0.72, 0.35)

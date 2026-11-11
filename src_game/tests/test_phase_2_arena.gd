@@ -91,9 +91,9 @@ func _init() -> void:
 	print("==================================================================")
 	if pass_all:
 		print(">>> PHASE 2 KIỂM ĐỊNH THÀNH CÔNG 100%! BẢN ĐỒ ĐA TẦNG ĐẠT CHUẨN! <<<")
-		arena.queue_free()
+		arena.free()
 		quit(0)
 	else:
 		print(">>> PHASE 2 CÓ LỖI CHƯA ĐẠT CHUẨN! <<<")
-		arena.queue_free()
+		arena.free()
 		quit(1)

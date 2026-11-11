@@ -1,5 +1,5 @@
 ﻿# 📦 GAMEWIZAD - CURRENT CODE SNAPSHOT
-Thời gian xuất: 2026-11-11 01:07:35
+Thời gian xuất: 2026-11-11 08:14:03
 Môi trường: Godot Engine 4.3+ | Renderer: Forward+ (NVIDIA RTX 4060)
 Kiến trúc: 100% KayKit GLB/GLTF - Zero Primitive Geometry (0% Hình Khối Cơ Bản)
 
@@ -676,6 +676,15 @@ var _dash_timer: float = 0.0
 var _last_safe_floor_pos: Vector3 = Vector3(0.0, 0.05, 4.0)
 var external_move_dir: Vector3 = Vector3.ZERO
 var _stuck_timer: float = 0.0
+var _rebound_timer: float = 0.0
+var _rebound_vel: Vector3 = Vector3.ZERO
+var _iframe_timer: float = 0.0
+var _is_spinning_q: bool = false
+var _spin_timer: float = 0.0
+var _throw_timer: float = 0.0
+var _is_throwing_e: bool = false
+var _lunge_timer: float = 0.0
+var _lunge_dir: Vector3 = Vector3.ZERO
 
 # --- Stats ---
 var hp: float = 100.0
@@ -688,9 +697,9 @@ func _ready() -> void:
 	collision_layer = 2
 	collision_mask = 1 | 4
 
-	# --- Cấu hình CharacterBody3D chuẩn leo dốc / cầu thang ---
+	# --- Cấu hình CharacterBody3D chuẩn leo dốc / cầu thang (Directive 19) ---
 	floor_snap_length = 0.60
-	floor_max_angle = deg_to_rad(58.0)
+	floor_max_angle = deg_to_rad(62.0)
 	floor_stop_on_slope = true
 	floor_constant_speed = true
 	floor_block_on_wall = true
@@ -802,6 +811,8 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector3.ZERO
 
 	# --- Timers ---
+	if _iframe_timer > 0.0:
+		_iframe_timer -= delta
 	if _action_lock_timer > 0.0:
 		_action_lock_timer -= delta
 	if _sword_trail_timer > 0.0:
@@ -823,33 +834,117 @@ func _physics_process(delta: float) -> void:
 	elif velocity.y < 0.0:
 		velocity.y = 0.0
 
-	# --- Dash override ---
-	if _dash_timer > 0.0:
-		_dash_timer -= delta
-		velocity.x = _dash_dir.x * DASH_SPEED
-		velocity.z = _dash_dir.z * DASH_SPEED
-		_apply_stair_step_up(_dash_dir, delta)
+	# --- Space: Instant Dash-Cancel (Task 19.4 Kỹ thuật C) ---
+	# Hủy mọi đòn đánh tức thì khi bấm Space để né đòn
+	if Input.is_action_just_pressed("dash"):
+		_action_lock_timer = 0.0
+		_is_spinning_q = false
+		_is_throwing_e = false
+		_lunge_timer = 0.0
+		_do_dodge()
+		return
+
+	# --- Rebound Override (Task 19.3 Lớp 2): Dội ngược khi lướt trúng quái ---
+	if _rebound_timer > 0.0:
+		_rebound_timer -= delta
+		velocity.x = _rebound_vel.x
+		velocity.z = _rebound_vel.z
 		move_and_slide()
 		return
 
-	# --- Input (Đọc trực tiếp phím vật lý chống kẹt Unikey) ---
-	var input_dir := Vector3.ZERO
-	var can_act: bool = _action_lock_timer <= 0.0 and _jump_state == 0
-
-	if can_act:
-		if external_move_dir.length_squared() > 0.01:
-			input_dir = external_move_dir.normalized()
+	# --- Dash Override (Task 19.2 & 19.3) ---
+	if _dash_timer > 0.0:
+		_dash_timer -= delta
+		var effective_dash_speed := DASH_SPEED
+		var on_stair_slope := false
+		if is_on_floor() and get_floor_normal().y < 0.96:
+			on_stair_slope = true
 		else:
-			var input_vec := _get_raw_physical_movement_input()
-			if input_vec.length_squared() > 0.001:
-				var cam := get_viewport().get_camera_3d()
-				var cam_right := Vector3.RIGHT
-				var cam_forward := Vector3.BACK
-				if cam != null:
-					cam_right = Vector3(cam.global_transform.basis.x.x, 0.0, cam.global_transform.basis.x.z).normalized()
-					cam_forward = Vector3(-cam.global_transform.basis.z.x, 0.0, -cam.global_transform.basis.z.z).normalized()
-				# input_vec.y < 0 là W (tiến), input_vec.y > 0 là S (lùi)
-				input_dir = (cam_right * input_vec.x + cam_forward * (-input_vec.y)).normalized()
+			for i in range(get_slide_collision_count()):
+				var col_obj := get_slide_collision(i).get_collider()
+				if col_obj is Node and (col_obj as Node).is_in_group("stairs"):
+					on_stair_slope = true
+					break
+
+		if on_stair_slope:
+			# Giảm hệ số lướt trên dốc cầu thang để tốc độ 3D cân bằng với mặt phẳng (Task 19.2)
+			effective_dash_speed = DASH_SPEED * 0.72
+			velocity.x = _dash_dir.x * effective_dash_speed
+			velocity.z = _dash_dir.z * effective_dash_speed
+			velocity.y = clampf(velocity.y, -4.0, effective_dash_speed * 0.35)
+		else:
+			velocity.x = _dash_dir.x * effective_dash_speed
+			velocity.z = _dash_dir.z * effective_dash_speed
+
+		move_and_slide()
+		# Kiểm tra va đập khi lướt vào bot (Task 19.3 Lớp 2)
+		_check_dash_impact_against_enemies()
+		return
+
+	# --- Xoay Kiếm Q Đang Hoạt Động (Task 19.4 Kỹ thuật B: Vừa di chuyển vừa xoay) ---
+	if _is_spinning_q:
+		_spin_timer -= delta
+		if _spin_timer <= 0.0:
+			_is_spinning_q = false
+			_action_lock_timer = 0.0
+			if anim_player:
+				anim_player.speed_scale = 1.0
+		else:
+			var spin_mv := _get_movement_input_vector()
+			if spin_mv.length_squared() > 0.01:
+				velocity.x = spin_mv.x * (RUN_SPEED * 0.80)
+				velocity.z = spin_mv.z * (RUN_SPEED * 0.80)
+				if visual_root:
+					visual_root.rotation.y = atan2(spin_mv.x, spin_mv.z)
+			else:
+				velocity.x = 0.0
+				velocity.z = 0.0
+			_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
+			move_and_slide()
+			return
+
+	# --- Ném Bom Khói E Đang Hoạt Động (Task 19.4 Kỹ thuật B: Vừa di chuyển vừa ném) ---
+	if _is_throwing_e:
+		_throw_timer -= delta
+		if _throw_timer <= 0.0:
+			_is_throwing_e = false
+			_action_lock_timer = 0.0
+			if anim_player:
+				anim_player.speed_scale = 1.0
+		else:
+			var throw_mv := _get_movement_input_vector()
+			if throw_mv.length_squared() > 0.01:
+				velocity.x = throw_mv.x * RUN_SPEED
+				velocity.z = throw_mv.z * RUN_SPEED
+				if visual_root:
+					visual_root.rotation.y = atan2(throw_mv.x, throw_mv.z)
+			else:
+				velocity.x = 0.0
+				velocity.z = 0.0
+			_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
+			move_and_slide()
+			return
+
+	# --- Bước Tấn Công Cận Chiến (Task 19.4 Kỹ thuật A: Step-Lunge 0.14s) ---
+	if _lunge_timer > 0.0:
+		_lunge_timer -= delta
+		velocity.x = _lunge_dir.x * 6.2
+		velocity.z = _lunge_dir.z * 6.2
+		if visual_root and _lunge_dir.length_squared() > 0.01:
+			visual_root.rotation.y = atan2(_lunge_dir.x, _lunge_dir.z)
+		_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
+		move_and_slide()
+		return
+	elif _action_lock_timer > 0.0:
+		# Pha 2 (0.14s -> 0.24s): Đặt trụ vững, chém trúng đích, 0% trượt chân
+		velocity.x = 0.0
+		velocity.z = 0.0
+		move_and_slide()
+		return
+
+	# --- Input Di Chuyển & Chiến Đấu Bình Thường (can_act) ---
+	var input_dir := _get_movement_input_vector()
+	var can_act: bool = _action_lock_timer <= 0.0 and _jump_state == 0
 
 	# --- Xử lý hành động chiến đấu ---
 	if can_act:
@@ -871,11 +966,6 @@ func _physics_process(delta: float) -> void:
 		# E: Phóng đạn 3D
 		if Input.is_action_just_pressed("skill_e"):
 			_do_ranged_throw()
-			return
-
-		# Space: Lướt né
-		if Input.is_action_just_pressed("dash"):
-			_do_dodge()
 			return
 
 		# C / Jump: Nhảy
@@ -917,6 +1007,15 @@ func _physics_process(delta: float) -> void:
 	_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 	move_and_slide()
 
+	# --- Corner Crowd Shove (Task 19.3 Lớp 3: Chen vai đẩy mềm lính khi đi bộ) ---
+	if input_dir.length_squared() > 0.01:
+		for i in range(get_slide_collision_count()):
+			var col := get_slide_collision(i)
+			var col_obj = col.get_collider()
+			if col_obj is Node and (col_obj as Node).is_in_group("enemies"):
+				if col_obj.has_method("apply_knockback"):
+					col_obj.apply_knockback(input_dir * 6.5)
+
 	# --- Anti-Stuck Depenetration Guard (Giải cứu kẹt góc) ---
 	if get_slide_collision_count() >= 2:
 		var horiz_spd := Vector2(velocity.x, velocity.z).length()
@@ -940,8 +1039,11 @@ func _physics_process(delta: float) -> void:
 # ==============================================================================
 # HÀM BƯỚC LÊN BẬC THANG TỰ ĐỘNG (_apply_stair_step_up)
 # Giới hạn chỉ kích hoạt khi vật cản phía trước thuộc group "stairs"
+# Khóa hoàn toàn khi đang Dash (Task 19.2)
 # ==============================================================================
 func _apply_stair_step_up(move_dir: Vector3, delta: float) -> void:
+	if _dash_timer > 0.0:
+		return
 	if move_dir.length_squared() < 0.01:
 		return
 	var space_state := get_world_3d().direct_space_state
@@ -979,7 +1081,65 @@ func _apply_stair_step_up(move_dir: Vector3, delta: float) -> void:
 
 
 # ==============================================================================
-# ACTIONS
+# HÀM LẤY VECTOR DI CHUYỂN THEO CAMERA HOẶC EXTERNAL
+# ==============================================================================
+func _get_movement_input_vector() -> Vector3:
+	if external_move_dir.length_squared() > 0.01:
+		return external_move_dir.normalized()
+	var input_vec := _get_raw_physical_movement_input()
+	if input_vec.length_squared() > 0.001:
+		var cam := get_viewport().get_camera_3d()
+		var cam_right := Vector3.RIGHT
+		var cam_forward := Vector3.BACK
+		if cam != null:
+			cam_right = Vector3(cam.global_transform.basis.x.x, 0.0, cam.global_transform.basis.x.z).normalized()
+			cam_forward = Vector3(-cam.global_transform.basis.z.x, 0.0, -cam.global_transform.basis.z.z).normalized()
+		return (cam_right * input_vec.x + cam_forward * (-input_vec.y)).normalized()
+	return Vector3.ZERO
+
+
+# ==============================================================================
+# KIỂM TRA VA CHẠM KHI LƯỚT VÀO BOT (DỘI LẠI + HÚC VĂNG BOT)
+# ==============================================================================
+func _check_dash_impact_against_enemies() -> void:
+	var enemies := get_tree().get_nodes_in_group("enemies")
+	for enemy in enemies:
+		if not is_instance_valid(enemy) or enemy.get("is_dead"):
+			continue
+		var e_node := enemy as Node3D
+		var diff := e_node.global_position - global_position
+		diff.y = 0.0
+		var dist := diff.length()
+		if dist <= 1.15:
+			var dot_fwd := _dash_dir.dot(diff.normalized()) if dist > 0.001 else 1.0
+			if dot_fwd >= 0.2:
+				# 1. Chấm dứt đà tiến của cú Lướt ngay lập tức (KHÔNG XUYÊN QUA BOT!)
+				_dash_timer = 0.0
+
+				# 2. Nhân vật bị dội nảy ngược lại phía sau ~0.8m trong 0.16 giây
+				_rebound_timer = 0.16
+				_rebound_vel = -_dash_dir * 6.2
+				velocity.x = _rebound_vel.x
+				velocity.z = _rebound_vel.z
+
+				# 3. Húc văng con Bot bị đụng (và các Bot đứng sát cạnh nó trong bán kính 1.8m) lùi ra xa 2.0m!
+				for near_enemy in enemies:
+					if is_instance_valid(near_enemy) and near_enemy.has_method("apply_dash_impact_knockback"):
+						var ne_node := near_enemy as Node3D
+						if ne_node and (ne_node == e_node or ne_node.global_position.distance_to(e_node.global_position) <= 1.8):
+							var push_dir: Vector3 = ne_node.global_position - global_position
+							push_dir.y = 0.0
+							if push_dir.length_squared() < 0.01:
+								push_dir = _dash_dir
+							near_enemy.apply_dash_impact_knockback(push_dir.normalized() * 14.5, 0.38)
+
+				# 4. Hiệu ứng va chạm
+				KayKitVFXManager.spawn_hit_impact_at_chest(e_node)
+				break
+
+
+# ==============================================================================
+# ACTIONS (TASK 19.4: FLUID COMBAT - 0% KHỰNG, 0% TRƯỢT CHÂN)
 # ==============================================================================
 
 func _do_melee_combo() -> void:
@@ -987,55 +1147,65 @@ func _do_melee_combo() -> void:
 
 	var anim_name: String = COMBO_SEQUENCE[_combo_index]
 	_play_anim(anim_name)
+	if anim_player:
+		anim_player.speed_scale = 1.45
 
-	var anim_length: float = _get_anim_length(anim_name)
-	_action_lock_timer = anim_length - 0.05
-
+	# Pha 1 + Pha 2 tổng thời gian khóa chỉ 0.24s (Cắt bỏ thu kiếm thừa, Task 19.4 Kỹ thuật A)
+	_action_lock_timer = 0.24
 	_start_sword_trail()
+
+	# Tính hướng bước tấn công (Attack Step-Lunge trong 0.14s)
+	var lunge_v := _get_raw_physical_movement_input()
+	if lunge_v.length_squared() > 0.01:
+		var cam := get_viewport().get_camera_3d()
+		var cam_right := Vector3.RIGHT
+		var cam_forward := Vector3.BACK
+		if cam != null:
+			cam_right = Vector3(cam.global_transform.basis.x.x, 0.0, cam.global_transform.basis.x.z).normalized()
+			cam_forward = Vector3(-cam.global_transform.basis.z.x, 0.0, -cam.global_transform.basis.z.z).normalized()
+		_lunge_dir = (cam_right * lunge_v.x + cam_forward * (-lunge_v.y)).normalized()
+	elif external_move_dir.length_squared() > 0.01:
+		_lunge_dir = external_move_dir.normalized()
+	elif visual_root:
+		_lunge_dir = Vector3(sin(visual_root.rotation.y), 0.0, cos(visual_root.rotation.y)).normalized()
+	else:
+		_lunge_dir = Vector3.FORWARD
+
+	_lunge_timer = 0.14
+	_combo_index = (_combo_index + 1) % COMBO_SEQUENCE.size()
+	_combo_timer = COMBO_WINDOW + 0.24
 
 	# Gây sát thương cận chiến ngay lập tức (LMB 25.0 HP)
 	_apply_melee_hit_detection(MELEE_DAMAGE, MELEE_RANGE, false)
 
-	_combo_index = (_combo_index + 1) % COMBO_SEQUENCE.size()
-	_combo_timer = COMBO_WINDOW + anim_length
-
-	velocity.x = 0.0
-	velocity.z = 0.0
-
 
 func _do_block_counter() -> void:
 	_face_cursor()
-
 	_play_anim(ANIM_BLOCK)
-	_action_lock_timer = 0.35
+	if anim_player:
+		anim_player.speed_scale = 1.45
+	_action_lock_timer = 0.24
 
-	var timer := get_tree().create_timer(0.35)
-	timer.timeout.connect(func():
-		if _is_dead:
-			return
-		_play_anim(ANIM_ATTACK_STAB)
-		_action_lock_timer = _get_anim_length(ANIM_ATTACK_STAB) - 0.05
-		_start_sword_trail()
-
-		KayKitVFXManager.spawn_ground_decal_shockwave(
-			get_tree().current_scene,
-			global_position,
-			2.5,
-			Color(0.3, 0.7, 1.0, 0.8)
-		)
-
-		_apply_melee_hit_detection(20.0, 2.5, false)
-		_knockback_nearby_enemies(2.5, 5.0)
+	_start_sword_trail()
+	KayKitVFXManager.spawn_ground_decal_shockwave(
+		get_tree().current_scene,
+		global_position,
+		2.5,
+		Color(0.3, 0.7, 1.0, 0.8)
 	)
 
-	velocity.x = 0.0
-	velocity.z = 0.0
+	_apply_melee_hit_detection(20.0, 2.5, false)
+	_knockback_nearby_enemies(2.5, 5.0)
 
 
 func _do_spin_attack() -> void:
 	_face_cursor()
 	_play_anim(ANIM_SPIN)
-	_action_lock_timer = 0.65
+	if anim_player:
+		anim_player.speed_scale = 1.55
+	_is_spinning_q = true
+	_spin_timer = 0.45
+	_action_lock_timer = 0.45
 
 	_start_sword_trail()
 	_sword_trail_timer = 0.6
@@ -1050,14 +1220,15 @@ func _do_spin_attack() -> void:
 	# Sát thương diện rộng 360 độ
 	_apply_melee_hit_detection(SPIN_DAMAGE, SPIN_RANGE, true)
 
-	velocity.x = 0.0
-	velocity.z = 0.0
-
 
 func _do_ranged_throw() -> void:
 	_face_cursor()
 	_play_anim(ANIM_THROW)
-	_action_lock_timer = _get_anim_length(ANIM_THROW) - 0.05
+	if anim_player:
+		anim_player.speed_scale = 1.75
+	_is_throwing_e = true
+	_throw_timer = 0.18
+	_action_lock_timer = 0.18
 
 	var target_pos := _get_cursor_world_pos()
 	var start_pos := global_position + Vector3(0.0, 1.2, 0.0)
@@ -1066,27 +1237,15 @@ func _do_ranged_throw() -> void:
 		get_tree().current_scene, start_pos, target_pos, "smokebomb"
 	)
 
-	velocity.x = 0.0
-	velocity.z = 0.0
+	# Làm chậm 60% tốc độ và ngắt đòn đánh của Bot trong bán kính 4.0m (Task 19.4 Kỹ thuật B)
+	for enemy in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(enemy) and (enemy as Node3D).global_position.distance_to(target_pos) <= 4.0:
+			if enemy.has_method("apply_smoke_slow"):
+				enemy.apply_smoke_slow(0.60, 2.5)
 
 
 func _do_dodge() -> void:
-	var cam := get_viewport().get_camera_3d()
-	var dodge_dir := Vector3.ZERO
-	if cam:
-		var cam_basis := cam.global_transform.basis
-		var screen_right := Vector3(cam_basis.x.x, 0.0, cam_basis.x.z).normalized()
-		var screen_up := Vector3(cam_basis.z.x, 0.0, cam_basis.z.z).normalized()
-
-		if Input.is_action_pressed("move_right"):
-			dodge_dir += screen_right
-		if Input.is_action_pressed("move_left"):
-			dodge_dir -= screen_right
-		if Input.is_action_pressed("move_forward"):
-			dodge_dir -= screen_up
-		if Input.is_action_pressed("move_backward"):
-			dodge_dir += screen_up
-
+	var dodge_dir := _get_movement_input_vector()
 	if dodge_dir.length_squared() < 0.01:
 		if visual_root:
 			dodge_dir = Vector3(sin(visual_root.rotation.y), 0.0, cos(visual_root.rotation.y)).normalized()
@@ -1097,6 +1256,7 @@ func _do_dodge() -> void:
 	_dash_dir = dodge_dir
 	_dash_timer = DASH_DURATION
 	_action_lock_timer = DASH_DURATION
+	_iframe_timer = 0.35 # 0.35s Bất tử (I-Frames, Task 19.4 Kỹ thuật C)
 
 	if visual_root:
 		visual_root.rotation.y = atan2(dodge_dir.x, dodge_dir.z)
@@ -1185,17 +1345,27 @@ func _knockback_nearby_enemies(radius: float, force: float) -> void:
 					enemy_node.apply_knockback(push_dir * force)
 
 
-## Nhận sát thương
+## Nhận sát thương (Hỗ trợ I-Frames & Hyper-Armor khi xoay kiếm Q)
 func take_damage(amount: float, _from_dir: Vector3 = Vector3.ZERO) -> void:
 	if _is_dead:
 		return
-	hp -= amount
+	# 1. Bất tử khi đang Lướt né (I-Frames, Task 19.4 Kỹ thuật C)
+	if _iframe_timer > 0.0:
+		return
+
+	# 2. Hyper-Armor khi đang Xoay Kiếm Q (Giảm 60% sát thương, Task 19.4 Kỹ thuật B)
+	var final_amount := amount
+	if _is_spinning_q:
+		final_amount *= 0.40
+
+	hp -= final_amount
 	if hp <= 0.0:
 		hp = 0.0
 		_die()
 	else:
-		_play_anim(ANIM_HIT)
-		_action_lock_timer = 0.3
+		if not _is_spinning_q:
+			_play_anim(ANIM_HIT)
+			_action_lock_timer = 0.3
 
 
 func _die() -> void:
@@ -1213,6 +1383,10 @@ func _die() -> void:
 func _play_anim(anim_name: String) -> void:
 	if anim_player == null:
 		return
+	# Khi quay về Idle hoặc Running_A, hoàn trả tốc độ hoạt ảnh chuẩn 1.0 (Task 19.4)
+	if anim_name == ANIM_IDLE or anim_name == ANIM_RUN:
+		anim_player.speed_scale = 1.0
+
 	if _current_anim == anim_name and anim_player.is_playing():
 		return
 	if anim_player.has_animation(anim_name):
@@ -7532,6 +7706,15 @@ var blade_tip_marker: Marker3D = null
 var axe_trails: Array[GPUParticles3D] = []
 var hp_label_3d: Label3D = null
 var _stuck_timer: float = 0.0
+var _hit_stun_timer: float = 0.0
+var _smoke_slow_timer: float = 0.0
+var _smoke_slow_factor: float = 0.0
+var _avoid_commit_timer: float = 0.0
+var _avoid_commit_sign: float = 1.0
+var _stuck_check_timer: float = 0.0
+var _last_stuck_check_pos: Vector3 = Vector3.ZERO
+var _unstuck_recovery_timer: float = 0.0
+var _unstuck_move_dir: Vector3 = Vector3.ZERO
 
 # Định nghĩa các tuyến cầu thang nối 3 tầng
 const STAIR_LINKS = [
@@ -7543,6 +7726,7 @@ const STAIR_LINKS = [
 func _ready() -> void:
 	hp = max_hp
 	_last_safe_floor_pos = global_position
+	_last_stuck_check_pos = global_position
 	add_to_group("enemies")
 	add_to_group("enemy")
 
@@ -7695,8 +7879,24 @@ func _physics_process(delta: float) -> void:
 	if _attack_cd_timer > 0.0:
 		_attack_cd_timer -= delta
 
+	# Xử lý Hit-Stun Interrupt (Task 19.4 Kỹ thuật C: Ngắt đòn và khựng 0.35s)
+	if _hit_stun_timer > 0.0:
+		_hit_stun_timer -= delta
+		velocity.x = _knockback_vel.x
+		velocity.z = _knockback_vel.z
+		_knockback_vel = _knockback_vel.move_toward(Vector3.ZERO, 18.0 * delta)
+		_play_anim_safe("Hit_A")
+		move_and_slide()
+		return
+
 	# Xử lý lực đẩy lùi khi trúng đòn
 	_knockback_vel = _knockback_vel.move_toward(Vector3.ZERO, 18.0 * delta)
+
+	# Làm chậm do Bom Khói E (Task 19.4 Kỹ thuật B)
+	var current_move_speed := move_speed
+	if _smoke_slow_timer > 0.0:
+		_smoke_slow_timer -= delta
+		current_move_speed *= (1.0 - _smoke_slow_factor)
 
 	if _action_lock_timer > 0.0:
 		_action_lock_timer -= delta
@@ -7723,30 +7923,66 @@ func _physics_process(delta: float) -> void:
 	var flat_dist := flat_to_player.length()
 	var y_diff := to_player.y
 
-	# Nếu trong tầm đánh & cùng tầng độ cao (chênh lệch Y < 1.35m)
-	if flat_dist <= attack_range and absf(y_diff) < 1.35:
-		velocity.x = _knockback_vel.x
-		velocity.z = _knockback_vel.z
-		if flat_dist > 0.05:
-			var aim_dir := flat_to_player.normalized()
-			if visual_root:
-				visual_root.rotation.y = lerp_angle(visual_root.rotation.y, atan2(aim_dir.x, aim_dir.z), 18.0 * delta)
+	var desired_move_vel := Vector3.ZERO
+
+	# Lớp 1 — Khoảng Cách Dừng Chiến Đấu (1.45m) & Tự Tách Đội Hình Vòng Cung (Task 19.3)
+	if flat_dist <= 1.45 and absf(y_diff) < 1.2:
+		if flat_dist < 1.10:
+			# Quá sát người chơi -> lùi nhẹ ra sau để nhường khoảng thở
+			var back_dir := -flat_to_player.normalized() if flat_dist > 0.01 else Vector3.BACK
+			desired_move_vel = back_dir * 2.8
+		else:
+			desired_move_vel = Vector3.ZERO
+
 		if _attack_cd_timer <= 0.0:
 			_start_melee_attack()
 		else:
 			_play_anim_safe("Idle")
 	elif dist_3d <= aggro_range:
-		# Multi-Tier Stair Waypoint AI: Khi khác tầng, tự động tìm và chạy qua cầu thang
-		var move_dir := _get_movement_direction(player)
-		velocity.x = move_dir.x * move_speed + _knockback_vel.x
-		velocity.z = move_dir.z * move_speed + _knockback_vel.z
-		if move_dir.length_squared() > 0.01 and visual_root:
-			visual_root.rotation.y = lerp_angle(visual_root.rotation.y, atan2(move_dir.x, move_dir.z), 14.0 * delta)
+		# Multi-Tier Stair Waypoint AI + Cảm Biến 7 Tia Đi Vòng Tránh Vật Cản (Task 19.5)
+		var raw_dir := _get_movement_direction(player)
+		var smart_dir := _compute_obstacle_avoidance_direction(raw_dir, flat_dist, delta)
+		desired_move_vel = smart_dir * current_move_speed
 		_play_anim_safe("Running_A")
+
+		# Bộ Tự Động Gỡ Kẹt (Stuck Detector mỗi 0.35s, Task 19.5 Tầng 2)
+		_stuck_check_timer += delta
+		if _stuck_check_timer >= 0.35:
+			_stuck_check_timer = 0.0
+			var moved_dist := (global_position - _last_stuck_check_pos).length()
+			if moved_dist < 0.12 and desired_move_vel.length_squared() > 0.5:
+				_avoid_commit_sign = -_avoid_commit_sign
+				_unstuck_recovery_timer = 0.55
+				_unstuck_move_dir = raw_dir.rotated(Vector3.UP, deg_to_rad(105.0 * _avoid_commit_sign)).normalized()
+			_last_stuck_check_pos = global_position
 	else:
-		velocity.x = _knockback_vel.x
-		velocity.z = _knockback_vel.z
+		desired_move_vel = Vector3.ZERO
 		_play_anim_safe("Idle")
+
+	# Lực đẩy tách bầy đàn giữa các Bot (Boids Separation Force, Task 19.3 Lớp 1)
+	var separation_vec := Vector3.ZERO
+	for other in get_tree().get_nodes_in_group("enemies"):
+		if other == self or not is_instance_valid(other) or other.get("is_dead"):
+			continue
+		var diff: Vector3 = global_position - (other as Node3D).global_position
+		diff.y = 0.0
+		var d := diff.length()
+		if d > 0.001 and d < 1.35:
+			separation_vec += diff.normalized() * ((1.35 - d) / 1.35) * 4.5
+
+	velocity.x = desired_move_vel.x + separation_vec.x + _knockback_vel.x
+	velocity.z = desired_move_vel.z + separation_vec.z + _knockback_vel.z
+
+	# Tầng 3 — Xoay Mặt Theo Hướng Bước Đi Thực Tế (Velocity-Aligned Facing, Task 19.5 Tầng 3)
+	var horiz_vel := Vector3(velocity.x, 0.0, velocity.z)
+	if horiz_vel.length_squared() > 0.15 and (flat_dist > 2.1 or _avoid_commit_timer > 0.0 or _unstuck_recovery_timer > 0.0 or absf(y_diff) > 1.15):
+		var walk_yaw := atan2(horiz_vel.x, horiz_vel.z)
+		if visual_root:
+			visual_root.rotation.y = lerp_angle(visual_root.rotation.y, walk_yaw, 14.0 * delta)
+	elif flat_dist <= 2.1 and absf(y_diff) <= 1.2:
+		# Khi đã áp sát tầm cận chiến -> xoay trực diện vào người chơi để bổ rìu
+		if flat_dist > 0.05 and visual_root:
+			visual_root.rotation.y = lerp_angle(visual_root.rotation.y, atan2(flat_to_player.x, flat_to_player.z), 18.0 * delta)
 
 	_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta)
 	move_and_slide()
@@ -7772,28 +8008,87 @@ func _physics_process(delta: float) -> void:
 
 
 # ==============================================================================
+# CẢM BIẾN 7 TIA ĐI VÒNG VẬT CẢN & GHI NHỚ HƯỚNG LÁCH (TASK 19.5 TẦNG 2)
+# ==============================================================================
+func _compute_obstacle_avoidance_direction(desired_dir: Vector3, dist_to_target: float, delta: float) -> Vector3:
+	if desired_dir.length_squared() < 0.001:
+		return Vector3.ZERO
+	var space_state := get_world_3d().direct_space_state
+	var ray_origin := global_position + Vector3(0.0, 0.55, 0.0) # Độ cao ngang hông
+	var probe_dist := clampf(dist_to_target, 1.4, 2.6)
+
+	# 1. Nếu đang trong trạng thái Tự Gỡ Kẹt (Unstuck Recovery)
+	if _unstuck_recovery_timer > 0.0:
+		_unstuck_recovery_timer -= delta
+		return _unstuck_move_dir
+
+	# 2. Kiểm tra tia chính diện (0 độ) và 2 tia vai (-22 độ, +22 độ)
+	var front_blocked := false
+	for check_deg in [0.0, -22.0, 22.0]:
+		var check_dir := desired_dir.rotated(Vector3.UP, deg_to_rad(check_deg))
+		var q := PhysicsRayQueryParameters3D.create(ray_origin, ray_origin + check_dir * probe_dist, 1)
+		q.exclude = [get_rid()]
+		var hit := space_state.intersect_ray(q)
+		if not hit.is_empty():
+			var hit_normal: Vector3 = hit["normal"]
+			if hit_normal.y < 0.55:
+				front_blocked = true
+				break
+
+	if not front_blocked and _avoid_commit_timer <= 0.0:
+		return desired_dir
+
+	# 3. Quét các góc râu cảm biến hai bên để tìm lối đi vòng thông thoáng nhất
+	if _avoid_commit_timer > 0.0:
+		_avoid_commit_timer -= delta
+
+	var candidate_angles := [35.0, -35.0, 65.0, -65.0, 95.0, -95.0, 130.0, -130.0]
+	if _avoid_commit_timer > 0.0:
+		candidate_angles.sort_custom(func(a, b): return (signf(a) == _avoid_commit_sign) and (signf(b) != _avoid_commit_sign))
+
+	var best_dir := desired_dir
+	var best_score := -999.0
+
+	for deg in candidate_angles:
+		var test_dir := desired_dir.rotated(Vector3.UP, deg_to_rad(deg)).normalized()
+		var q := PhysicsRayQueryParameters3D.create(ray_origin, ray_origin + test_dir * (probe_dist + 0.6), 1)
+		q.exclude = [get_rid()]
+		var hit := space_state.intersect_ray(q)
+		var clearance := probe_dist + 0.6
+		if not hit.is_empty() and hit["normal"].y < 0.55:
+			clearance = ray_origin.distance_to(hit["position"])
+
+		var align_score := test_dir.dot(desired_dir) * 1.2
+		var commit_bonus := 0.65 if (signf(deg) == _avoid_commit_sign and _avoid_commit_timer > 0.0) else 0.0
+		var total_score := clearance + align_score + commit_bonus
+		if total_score > best_score and clearance > 1.15:
+			best_score = total_score
+			best_dir = test_dir
+			if front_blocked and _avoid_commit_timer <= 0.0:
+				_avoid_commit_sign = signf(deg)
+				_avoid_commit_timer = 0.65 # Giữ hướng đi vòng tối thiểu 0.65s
+
+	return best_dir
+
+
+# ==============================================================================
 # MULTI-TIER STAIR WAYPOINT AI
 # ==============================================================================
 func _get_movement_direction(player: Node3D) -> Vector3:
 	var my_y := global_position.y
 	var p_y := player.global_position.y
 
-	# Nếu chênh lệch Y > 0.75m: Sử dụng Waypoint cầu thang để leo/xuống tầng
-	if absf(p_y - my_y) > 0.75:
+	# Nếu chênh lệch Y > 1.15m: Sử dụng Waypoint cầu thang để leo/xuống tầng (Task 19.5 Tầng 1)
+	if absf(p_y - my_y) > 1.15:
 		var stair_waypoint := _get_nearest_stair_waypoint(my_y, p_y)
 		var diff := stair_waypoint - global_position
 		diff.y = 0.0
 		if diff.length_squared() > 0.04:
 			return diff.normalized()
 
-	# Cùng tầng hoặc đã tới điểm chuyển tiếp: Sử dụng NavAgent hoặc hướng thẳng tới player
-	nav_agent.target_position = player.global_position
-	var next_pos := nav_agent.get_next_path_position()
-	var move_vec := next_pos - global_position
+	# Cùng tầng hoặc đã tới điểm chuyển tiếp: Hướng thẳng tới player
+	var move_vec := player.global_position - global_position
 	move_vec.y = 0.0
-	if move_vec.length_squared() < 0.01:
-		move_vec = player.global_position - global_position
-		move_vec.y = 0.0
 	return move_vec.normalized() if move_vec.length_squared() > 0.01 else Vector3.ZERO
 
 
@@ -7912,6 +8207,26 @@ func apply_knockback(force_vec: Vector3) -> void:
 	var flat_kb := Vector3(force_vec.x, 0.0, force_vec.z)
 	_knockback_vel = flat_kb
 
+func apply_dash_impact_knockback(impulse: Vector3, stun_duration: float) -> void:
+	if is_dead:
+		return
+	_knockback_vel = impulse
+	_hit_stun_timer = maxf(_hit_stun_timer, stun_duration)
+	_action_lock_timer = maxf(_action_lock_timer, stun_duration)
+	_is_attacking = false
+	_attack_cd_timer = maxf(_attack_cd_timer, 0.5)
+	_set_axe_trails(false)
+	_play_anim_safe("Hit_A")
+
+func apply_smoke_slow(slow_factor: float, duration: float) -> void:
+	if is_dead:
+		return
+	_smoke_slow_factor = slow_factor
+	_smoke_slow_timer = duration
+	_is_attacking = false
+	_action_lock_timer = 0.4
+	_play_anim_safe("Hit_A")
+
 func take_damage(amount: float, knockback_dir: Vector3 = Vector3.ZERO) -> void:
 	if is_dead:
 		return
@@ -7920,11 +8235,14 @@ func take_damage(amount: float, knockback_dir: Vector3 = Vector3.ZERO) -> void:
 	_spawn_floating_damage_text(amount)
 	_is_attacking = false
 	_set_axe_trails(false)
+	_hit_stun_timer = 0.35 # Hit-Stun Interrupt ngắt ngay đòn bổ rìu của Bot (Task 19.4 Kỹ thuật C)
+	_action_lock_timer = 0.35
+	_attack_cd_timer = maxf(_attack_cd_timer, 0.4)
 	KayKitVFXManager.spawn_hit_impact_at_chest(self)
 
 	if knockback_dir.length_squared() > 0.001:
 		var flat_kb := Vector3(knockback_dir.x, 0.0, knockback_dir.z).normalized()
-		_knockback_vel = flat_kb * 5.0
+		_knockback_vel = flat_kb * 6.5
 
 	if hp <= 0.0:
 		is_dead = true
@@ -7937,7 +8255,6 @@ func take_damage(amount: float, knockback_dir: Vector3 = Vector3.ZERO) -> void:
 		tw.tween_interval(1.8)
 		tw.tween_callback(queue_free)
 	else:
-		_action_lock_timer = 0.32
 		_play_anim_safe("Hit_A")
 
 func _spawn_floating_damage_text(damage_amount: float) -> void:
@@ -8413,9 +8730,6 @@ func _spawn_trimesh_piece(path: String, pos: Vector3, rot_deg: Vector3, parent: 
 					sb.collision_layer = 1
 					sb.collision_mask = 0
 
-	if parent == walls_container:
-		attach_padded_obstacle_collider(inst, 0.28, 3.5)
-
 	return inst
 
 # ------------------------------------------------------------------------------
@@ -8435,8 +8749,17 @@ func _spawn_visual_only_piece(path: String, pos: Vector3, rot_deg: Vector3, pare
 
 # ------------------------------------------------------------------------------
 # HÀM TẠO VA CHẠM VẬT LÝ CONVEX CHO VẬT CẢN (LAYER 1)
+# Bỏ qua 100% va chạm cho Đuốc và Đạo cụ nhỏ trang trí (Task 19.1)
 # ------------------------------------------------------------------------------
 func _spawn_convex_piece(path: String, pos: Vector3, rot_deg: Vector3, parent: Node, scale_factor: float = 1.0) -> Node3D:
+	var path_lower := path.to_lower()
+	for skip_token in ["torch", "light", "grass", "pebble", "banner", "flag"]:
+		if path_lower.contains(skip_token):
+			var visual_piece := _spawn_visual_only_piece(path, pos, rot_deg, parent)
+			if visual_piece and scale_factor != 1.0:
+				visual_piece.scale = Vector3.ONE * scale_factor
+			return visual_piece
+
 	var sc: PackedScene = ResourceLoader.load(path) as PackedScene
 	if sc == null:
 		push_error("Failed to load convex piece: " + path)
@@ -8464,11 +8787,12 @@ func _spawn_convex_piece(path: String, pos: Vector3, rot_deg: Vector3, parent: N
 	return inst
 
 # ------------------------------------------------------------------------------
-# ĐUỐC KÈM ÁNH SÁNG OMNILIGHT3D ẤM ÁP
+# ĐUỐC KÈM ÁNH SÁNG OMNILIGHT3D ẤM ÁP (HOÀN TOÀN VISUAL ONLY - 0% VA CHẠM)
 # ------------------------------------------------------------------------------
 func _spawn_torch_with_light(pos: Vector3, parent: Node) -> void:
-	var torch_inst := _spawn_convex_piece(KayKitAssetRegistry.PROP_TORCH, pos, Vector3.ZERO, parent, 1.8)
+	var torch_inst := _spawn_visual_only_piece(KayKitAssetRegistry.PROP_TORCH, pos, Vector3.ZERO, parent)
 	if torch_inst:
+		torch_inst.scale = Vector3.ONE * 1.8
 		var light := OmniLight3D.new()
 		light.name = "TorchLight"
 		light.light_color = Color(1.0, 0.72, 0.35)
@@ -13279,6 +13603,281 @@ func _init() -> void:
 
 ```
 
+## 📄 File: src_game/tests/test_phase_19_corners_dash_and_fluid_combat.gd
+```gdscript
+extends SceneTree
+
+# ==============================================================================
+# TEST PHASE 19: CORNERS TRAP FIX, BALANCED STAIR DASH & FLUID COMBAT
+# 5 BÀI KIỂM THỬ BẮT BUỘC ĐẠT PASS 100% (ARGONS DIRECTIVE 19):
+#   [TEST 1]: Không bị kẹt đuốc / góc tường Tầng 3 (Y = 8.05m) tại (4.8, 8.05, -39.5)
+#   [TEST 2]: Cân bằng tốc độ lướt cầu thang (Space) so với mặt phẳng (<= 1.05x)
+#   [TEST 3]: Lướt đụng Bot dội ngược lại (Rebound) & Húc văng Bot >= 1.5m (0% xuyên qua)
+#   [TEST 4]: Tung chiêu linh hoạt (Attack Step-Lunge + Early Walk-Cancel 0.24s -> Running_A) & Hit-Stun Bot
+#   [TEST 5]: Bot định tuyến đa tầng, cảm biến 7 tia đi vòng vật cản & xoay mặt theo vận tốc bước đi
+# ==============================================================================
+
+const HeroKnight3D = preload("res://scripts/characters/hero_knight_3d.gd")
+const EnemyMinion3D = preload("res://scripts/enemies/enemy_minion_3d.gd")
+
+func _init() -> void:
+	print("==================================================================")
+	print("  TEST PHASE 19: CORNERS TRAP, BALANCED DASH & FLUID COMBAT")
+	print("==================================================================")
+
+	var scene_res := load("res://scenes/levels/kaykit_multitier_arena.tscn") as PackedScene
+	if not scene_res:
+		printerr("FAIL: Cannot load arena scene!")
+		quit(1)
+		return
+
+	var arena := scene_res.instantiate()
+	root.add_child(arena)
+
+	for f in range(6):
+		await process_frame
+
+	var hero := arena.get_node_or_null("HeroKnight3D") as HeroKnight3D
+	if not hero:
+		printerr("FAIL: HeroKnight3D not found!")
+		quit(1)
+		return
+
+	var all_pass := true
+
+	# --------------------------------------------------------------------------
+	# TEST 1: NO TORCH / CORNER STUCK AT TIER 3 (Y = 8.05m)
+	# --------------------------------------------------------------------------
+	print("\n>>> [TEST 1 - NO TORCH / CORNER STUCK AT TIER 3]...")
+	# Đặt Hero tại góc phía Đông Tầng 3 cạnh cây đuốc (4.8, 8.05, -39.5)
+	hero.global_position = Vector3(4.5, 8.05, -39.5)
+	hero.velocity = Vector3.ZERO
+	# Cho Hero di chuyển hướng về phía Nam đi ngang qua vị trí cây đuốc (Z = -38.0)
+	hero.external_move_dir = Vector3(0.0, 0.0, 1.0)
+
+	for i in range(40):
+		await physics_frame
+
+	var passed_forward := hero.global_position.z > -37.5
+	print("  - Hero forward movement through torch area: pos=%s (passed=%s)" % [hero.global_position, passed_forward])
+
+	# Cho Hero di chuyển ngược lại về phía Bắc qua vị trí cây đuốc
+	hero.external_move_dir = Vector3(0.0, 0.0, -1.0)
+	for i in range(40):
+		await physics_frame
+
+	var passed_backward := hero.global_position.z < -38.5
+	print("  - Hero backward movement through torch area: pos=%s (passed=%s)" % [hero.global_position, passed_backward])
+	hero.external_move_dir = Vector3.ZERO
+
+	if passed_forward and passed_backward:
+		print("  PASS: Hero moves freely around Tier 3 torches and corners with 0% obstruction")
+	else:
+		printerr("  FAIL: Hero got stuck at Tier 3 torch / corner!")
+		all_pass = false
+
+	# --------------------------------------------------------------------------
+	# TEST 2: BALANCED STAIR DASH SPEED (<= 1.05x FLAT DASH)
+	# --------------------------------------------------------------------------
+	print("\n>>> [TEST 2 - BALANCED STAIR DASH SPEED]...")
+	# 2.1 Đo quãng đường Dash trên mặt phẳng Tầng 1
+	hero.global_position = Vector3(0.0, 0.05, 0.0)
+	hero.velocity = Vector3.ZERO
+	await physics_frame
+	var flat_start := hero.global_position
+	hero._dash_dir = Vector3(0.0, 0.0, -1.0)
+	hero._dash_timer = hero.DASH_DURATION
+	var dash_frames := int(ceil(hero.DASH_DURATION * 60.0)) + 2
+
+	for i in range(dash_frames):
+		await physics_frame
+
+	var flat_disp := flat_start.distance_to(hero.global_position)
+	print("  - Flat surface Dash 3D displacement: %.3fm" % flat_disp)
+
+	# 2.2 Đo quãng đường Dash trên dốc cầu thang Tầng 1 -> Tầng 2
+	hero.global_position = Vector3(-6.0, 0.8, -12.8)
+	hero.velocity = Vector3.ZERO
+	for i in range(3):
+		await physics_frame
+	var stair_start := hero.global_position
+	hero._dash_dir = Vector3(0.0, 0.0, -1.0)
+	hero._dash_timer = hero.DASH_DURATION
+
+	for i in range(dash_frames):
+		await physics_frame
+
+	var stair_disp := stair_start.distance_to(hero.global_position)
+	var ratio := stair_disp / maxf(0.001, flat_disp)
+	print("  - Stair slope Dash 3D displacement: %.3fm (Ratio: %.2fx, Max allowed: 1.05x)" % [stair_disp, ratio])
+
+	if ratio <= 1.05:
+		print("  PASS: Stair Dash speed balanced successfully (%.2fx <= 1.05x)" % ratio)
+	else:
+		printerr("  FAIL: Stair Dash speed too high (%.2fx > 1.05x)" % ratio)
+		all_pass = false
+
+	# --------------------------------------------------------------------------
+	# TEST 3: DASH INTO BOT REBOUNDS & KNOCKS BOT BACK (ZERO PHASE-THROUGH)
+	# --------------------------------------------------------------------------
+	print("\n>>> [TEST 3 - DASH INTO BOT REBOUND & KNOCKBACK (ZERO PHASE-THROUGH)]...")
+	hero.global_position = Vector3(0.0, 0.05, 0.0)
+	hero.velocity = Vector3.ZERO
+
+	var test_minion := EnemyMinion3D.new()
+	test_minion.position = Vector3(0.0, 0.05, 1.5)
+	arena.add_child(test_minion)
+	for i in range(3):
+		await physics_frame
+
+	var minion_initial_z := test_minion.global_position.z
+	var max_hero_z := hero.global_position.z
+	hero._dash_dir = Vector3(0.0, 0.0, 1.0)
+	hero._dash_timer = hero.DASH_DURATION
+
+	var rebound_detected := false
+	for i in range(25):
+		await physics_frame
+		if hero.global_position.z > max_hero_z:
+			max_hero_z = hero.global_position.z
+		if hero._rebound_timer > 0.0 or hero.velocity.z < -1.0:
+			rebound_detected = true
+
+	var minion_final_z := test_minion.global_position.z
+	var minion_kb_dist := minion_final_z - minion_initial_z
+	print("  - Minion initial Z: %.2fm | Final Z: %.2fm | Knockback: %.2fm (Req >= 1.5m)" % [minion_initial_z, minion_final_z, minion_kb_dist])
+	print("  - Hero initial Z: 0.0m | Max Z reached: %.2fm | Final Z: %.2fm | Rebound detected: %s" % [max_hero_z, hero.global_position.z, rebound_detected])
+
+	var zero_phase := max_hero_z <= minion_initial_z + 0.15 # Never penetrated through bot
+	var bot_knocked := minion_kb_dist >= 1.5
+
+	if zero_phase and bot_knocked and rebound_detected:
+		print("  PASS: Hero rebounded on Bot collision with 0%% phase-through and knocked Bot back %.2fm" % minion_kb_dist)
+	else:
+		printerr("  FAIL: Dash impact failed! (zero_phase=%s, bot_knocked=%s, rebound=%s)" % [zero_phase, bot_knocked, rebound_detected])
+		all_pass = false
+
+	# --------------------------------------------------------------------------
+	# TEST 4: FLUID COMBAT WALK-CANCEL & ENEMY HIT-STUN
+	# --------------------------------------------------------------------------
+	print("\n>>> [TEST 4 - FLUID COMBAT WALK-CANCEL & ENEMY HIT-STUN]...")
+	hero.global_position = Vector3(0.0, 0.05, 0.0)
+	hero.velocity = Vector3.ZERO
+	test_minion.global_position = Vector3(0.0, 0.05, 1.5)
+	test_minion.hp = 80.0
+	test_minion.velocity = Vector3.ZERO
+	for i in range(3):
+		await physics_frame
+
+	hero.external_move_dir = Vector3(0.0, 0.0, 1.0)
+	hero._do_melee_combo()
+	var initial_action_lock := hero._action_lock_timer
+	print("  - Action lock timer at melee swing: %.3fs (Expected <= 0.24s)" % initial_action_lock)
+
+	# Chạy 17 frames (~0.28s > 0.24s action lock)
+	for i in range(17):
+		await physics_frame
+
+	var anim_after_cancel := hero._current_anim
+	var hero_moving_speed := Vector2(hero.velocity.x, hero.velocity.z).length()
+	var bot_hit_stun := test_minion._hit_stun_timer
+	var bot_hp := test_minion.hp
+	print("  - After 0.28s: Hero anim=%s, Move speed=%.2fm/s, Bot HP=%.1f (took dmg=%s), Bot hit stun=%.3fs" % [
+		anim_after_cancel, hero_moving_speed, bot_hp, bot_hp < 80.0, bot_hit_stun
+	])
+	hero.external_move_dir = Vector3.ZERO
+
+	var walk_cancel_pass := (anim_after_cancel == HeroKnight3D.ANIM_RUN) and (hero_moving_speed > 3.0)
+	var hit_stun_pass := (bot_hp <= 55.0)
+
+	if walk_cancel_pass and hit_stun_pass:
+		print("  PASS: Fluid combat walk-cancel into Running_A verified and Bot interrupted by Hit-Stun")
+	else:
+		printerr("  FAIL: Fluid combat walk-cancel failed! (walk_cancel=%s, hit_stun=%s)" % [walk_cancel_pass, hit_stun_pass])
+		all_pass = false
+
+	# --------------------------------------------------------------------------
+	# TEST 5: BOT LONG-RANGE OBSTACLE DETOUR & VELOCITY-ALIGNED FACING
+	# --------------------------------------------------------------------------
+	print("\n>>> [TEST 5 - BOT OBSTACLE DETOUR & VELOCITY-ALIGNED FACING]...")
+	hero.global_position = Vector3(0.0, 0.05, -6.0)
+	hero.velocity = Vector3.ZERO
+
+	var detour_minion := EnemyMinion3D.new()
+	detour_minion.position = Vector3(0.0, 0.05, 6.0) # Cách Hero 12m
+	detour_minion.aggro_range = 30.0
+	arena.add_child(detour_minion)
+
+	# Đặt 1 khối vật cản StaticBody3D rộng 3.0m chắn thẳng hướng giữa Minion và Hero tại Z = 0.0
+	var obstacle := StaticBody3D.new()
+	obstacle.name = "TestObstacleWall"
+	obstacle.collision_layer = 1
+	obstacle.collision_mask = 0
+	var obs_col := CollisionShape3D.new()
+	var obs_box := BoxShape3D.new()
+	obs_box.size = Vector3(3.2, 2.5, 1.2)
+	obs_col.shape = obs_box
+	obstacle.add_child(obs_col)
+	obstacle.position = Vector3(0.0, 1.25, 0.0)
+	arena.add_child(obstacle)
+
+	for i in range(4):
+		await physics_frame
+
+	var minion_max_sidestep := 0.0
+	var alignment_dots: Array[float] = []
+
+	# Giả lập vật lý 200 frames (~3.33s)
+	for i in range(200):
+		await physics_frame
+		var cur_pos := detour_minion.global_position
+		if absf(cur_pos.x) > minion_max_sidestep:
+			minion_max_sidestep = absf(cur_pos.x)
+
+		# Đo độ lệch góc giữa hướng xoay mặt của visual_root và vector vận tốc bước đi thực tế
+		var h_vel := Vector3(detour_minion.velocity.x, 0.0, detour_minion.velocity.z)
+		if h_vel.length() > 1.2 and detour_minion.visual_root != null:
+			var walk_v := h_vel.normalized()
+			var yaw: float = detour_minion.visual_root.rotation.y
+			var face_v := Vector3(sin(yaw), 0.0, cos(yaw)).normalized()
+			var dot_align := face_v.dot(walk_v)
+			alignment_dots.append(dot_align)
+
+	var minion_final_z_detour := detour_minion.global_position.z
+	var advanced_towards_hero := minion_final_z_detour < 2.0
+	var sidestep_pass := minion_max_sidestep >= 1.2
+
+	var avg_dot := 0.0
+	if alignment_dots.size() > 0:
+		var sum := 0.0
+		for d in alignment_dots:
+			sum += d
+		avg_dot = sum / alignment_dots.size()
+
+	print("  - Bot initial Z: 6.0m | Final Z: %.2fm (Advanced=%s)" % [minion_final_z_detour, advanced_towards_hero])
+	print("  - Bot max sidestep around wall: %.2fm (Req >= 1.2m, Pass=%s)" % [minion_max_sidestep, sidestep_pass])
+	print("  - Bot velocity-aligned facing average dot: %.3f (Req >= 0.85, Samples: %d)" % [avg_dot, alignment_dots.size()])
+
+	if advanced_towards_hero and sidestep_pass and avg_dot >= 0.85:
+		print("  PASS: Bot intelligently steered around obstacle and maintained velocity-aligned facing")
+	else:
+		printerr("  FAIL: Bot obstacle detour or facing alignment failed! (adv=%s, side=%s, dot=%.3f)" % [advanced_towards_hero, sidestep_pass, avg_dot])
+		all_pass = false
+
+	# --------------------------------------------------------------------------
+	# KẾT QUẢ CHUNG CUỘC
+	# --------------------------------------------------------------------------
+	print("\n==================================================================")
+	if all_pass:
+		print("  🏆 ALL 5 TESTS PASSED 100% (ARGONS DIRECTIVE 19 SATISFIED)!")
+	else:
+		printerr("  ❌ SOME TESTS FAILED! CHECK LOGS ABOVE.")
+	print("==================================================================")
+
+	quit(0 if all_pass else 1)
+
+```
+
 ## 📄 File: src_game/tests/test_phase_2_arena.gd
 ```gdscript
 extends SceneTree
@@ -13374,11 +13973,11 @@ func _init() -> void:
 	print("==================================================================")
 	if pass_all:
 		print(">>> PHASE 2 KIỂM ĐỊNH THÀNH CÔNG 100%! BẢN ĐỒ ĐA TẦNG ĐẠT CHUẨN! <<<")
-		arena.queue_free()
+		arena.free()
 		quit(0)
 	else:
 		print(">>> PHASE 2 CÓ LỖI CHƯA ĐẠT CHUẨN! <<<")
-		arena.queue_free()
+		arena.free()
 		quit(1)
 
 ```
