@@ -88,8 +88,8 @@ func _ready() -> void:
 	floor_stop_on_slope = true
 	floor_constant_speed = true
 	floor_block_on_wall = true
-	safe_margin = 0.05
-	wall_min_slide_angle = deg_to_rad(10.0)
+	safe_margin = 0.002
+	wall_min_slide_angle = 0.0
 
 	var col := CollisionShape3D.new()
 	col.name = "EnemyCollision"
@@ -381,25 +381,6 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	_apply_wall_micro_separation(delta)
 
-	# Anti-Stuck Depenetration Guard (Giải cứu kẹt góc tường/vật cản)
-	if get_slide_collision_count() >= 2:
-		var horiz_spd := Vector2(velocity.x, velocity.z).length()
-		if horiz_spd < 0.05:
-			_stuck_timer += delta
-			if _stuck_timer >= 0.35:
-				var push_dir := Vector3.ZERO
-				for i in range(get_slide_collision_count()):
-					var c := get_slide_collision(i)
-					push_dir += c.get_normal()
-				push_dir.y = 0.0
-				if push_dir.length_squared() > 0.01:
-					global_position += push_dir.normalized() * 0.15
-				_stuck_timer = 0.0
-		else:
-			_stuck_timer = 0.0
-	else:
-		_stuck_timer = 0.0
-
 
 # ==============================================================================
 # CẢM BIẾN 7 TIA ĐI VÒNG VẬT CẢN & GHI NHỚ HƯỚNG LÁCH (TASK 19.5 TẦNG 2)
@@ -533,10 +514,37 @@ func _get_nearest_stair_waypoint(my_y: float, target_y: float) -> Vector3:
 
 
 # ==============================================================================
+# HÀM KIỂM TRA HÀNH LANG BƯỚC ĐI CẦU THANG (Task 24.2 Lớp 2: Stair Corridor Gate)
+# ==============================================================================
+func _is_in_stair_walk_corridor(pos: Vector3, move_dir: Vector3) -> bool:
+	var horiz := Vector2(move_dir.x, move_dir.z)
+	if horiz.length_squared() < 0.001:
+		return false
+	# Chỉ kích hoạt khi hướng di chuyển có thành phần đi lên/xuống dọc theo trục Z của cầu thang
+	if absf(horiz.normalized().y) < 0.30:
+		return false
+
+	# Tọa độ X của nhân vật phải nằm lọt trong lòng rãnh giữa cầu thang (center_x ± 1.18m):
+	# 1. Cầu thang Tây (Tầng 1 <-> 2): center_x = -6.0, Z từ -17.0 đến -11.0
+	if absf(pos.x - (-6.0)) <= 1.18 and pos.z >= -17.0 and pos.z <= -11.0:
+		return true
+	# 2. Cầu thang Đông (Tầng 1 <-> 2): center_x = +6.0, Z từ -17.0 đến -11.0
+	if absf(pos.x - 6.0) <= 1.18 and pos.z >= -17.0 and pos.z <= -11.0:
+		return true
+	# 3. Cầu thang Giữa (Tầng 2 <-> 3): center_x = 0.0, Z từ -29.0 đến -23.0
+	if absf(pos.x - 0.0) <= 1.18 and pos.z >= -29.0 and pos.z <= -23.0:
+		return true
+
+	return false
+
+
+# ==============================================================================
 # HÀM BƯỚC LÊN BẬC THANG TỰ ĐỘNG (_apply_stair_step_up)
 # Giới hạn chỉ kích hoạt khi vật cản phía trước thuộc group "stairs"
 # ==============================================================================
 func _apply_stair_step_up(move_dir: Vector3, delta: float) -> void:
+	if not _is_in_stair_walk_corridor(global_position, move_dir):
+		return
 	if move_dir.length_squared() < 0.01:
 		return
 	var space_state := get_world_3d().direct_space_state

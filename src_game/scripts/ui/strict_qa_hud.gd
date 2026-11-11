@@ -280,7 +280,7 @@ func _build_ui() -> void:
 
 	skill_cooldown_label = Label.new()
 	skill_cooldown_label.name = "SkillCooldownLabel"
-	skill_cooldown_label.text = "[U] Liên Trảm: SẴN SÀNG  |  [I] Phá Không Trảm: SẴN SÀNG  |  [O] Cuồng Phong 360°: SẴN SÀNG  |  [P] Bom Lôi Vụ (7.5m): SẴN SÀNG"
+	skill_cooldown_label.text = "[U] Liên Trảm: SẴN SÀNG  |  [I] Phá Không: SẴN SÀNG  |  [O] Xoay 360°: SẴN SÀNG  |  [P] Bom Lôi Vụ: SẴN SÀNG  |  [Space] Lướt: SẴN SÀNG"
 	skill_cooldown_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	skill_cooldown_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	skill_cooldown_label.add_theme_font_size_override("font_size", 13)
@@ -383,7 +383,7 @@ func _update_telemetry_display(delta: float) -> void:
 		var delta_y := absf(hero_y - ground_y)
 		telemetry_coord_label.text = "[MULTI-TIER COORD]: Hero_Y: %.2fm | Ground_Y: %.2fm (ΔY: %.2fm)" % [hero_y, ground_y, delta_y]
 
-		# Update Skill Cooldowns (Task 21.2 & 23.4: U-I-O-P)
+		# Update Skill Cooldowns (Task 21.2 & 23.4 & 24.1)
 		if skill_cooldown_label != null:
 			var rmb_text := "SẴN SÀNG"
 			if "_cd_rmb_timer" in hero and hero._cd_rmb_timer > 0.05:
@@ -397,7 +397,11 @@ func _update_telemetry_display(delta: float) -> void:
 			if "_cd_e_timer" in hero and hero._cd_e_timer > 0.05:
 				e_text = "CD: %.1fs" % hero._cd_e_timer
 
-			skill_cooldown_label.text = "[U] Liên Trảm: SẴN SÀNG   |   [I] Phá Không Trảm: %s   |   [O] Cuồng Phong 360°: %s   |   [P] Bom Lôi Vụ (7.5m): %s" % [rmb_text, q_text, e_text]
+			var dash_text := "SẴN SÀNG"
+			if "_cd_dash_timer" in hero and hero._cd_dash_timer > 0.05:
+				dash_text = "CD: %.1fs" % hero._cd_dash_timer
+
+			skill_cooldown_label.text = "[U] Liên Trảm: SẴN SÀNG  |  [I] Phá Không: %s  |  [O] Xoay 360°: %s  |  [P] Bom Lôi Vụ: %s  |  [Space] Lướt: %s" % [rmb_text, q_text, e_text, dash_text]
 
 	# Enemies count
 	var enemies := get_tree().get_nodes_in_group("enemies")

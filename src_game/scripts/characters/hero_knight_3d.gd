@@ -31,6 +31,7 @@ const COMBO_WINDOW: float = 0.45
 const COOLDOWN_Q: float = 5.0
 const COOLDOWN_RMB: float = 3.5
 const COOLDOWN_E: float = 6.0
+const COOLDOWN_DASH: float = 1.0
 const MAX_E_THROW_RANGE: float = 7.5
 
 # --- Animation Names (KayKit 75 anims) ---
@@ -89,6 +90,8 @@ var _lunge_dir: Vector3 = Vector3.ZERO
 var _cd_q_timer: float = 0.0
 var _cd_rmb_timer: float = 0.0
 var _cd_e_timer: float = 0.0
+var _cd_dash_timer: float = 0.0
+var _prev_space_phys_down: bool = false
 var _buffered_action: String = ""
 var _buffer_timer: float = 0.0
 var _facing_angle: float = 0.0
@@ -126,6 +129,20 @@ func _is_skill_key_just_pressed(phys_key: Key, action_name: String) -> Dictionar
 		"pressed": kb_just_pressed or action_just_pressed,
 		"from_keyboard": kb_just_pressed
 	}
+
+## Đọc phím Space phần cứng chống lặp phím và chống spam (Task 24.1)
+func _is_dash_just_pressed() -> bool:
+	var has_focus := true
+	var win := get_window()
+	if win and DisplayServer.get_name() != "headless":
+		has_focus = win.has_focus()
+	if not has_focus:
+		_prev_space_phys_down = false
+		return false
+	var space_down := Input.is_physical_key_pressed(KEY_SPACE)
+	var space_just_pressed := space_down and not _prev_space_phys_down
+	_prev_space_phys_down = space_down
+	return space_just_pressed or Input.is_action_just_pressed("dash")
 
 ## Khi bấm U / I / P trên bàn phím: Ưu tiên nhắm vào Bot gần nhất trong tầm đánh trước mặt, hoặc đánh theo hướng chạy WASD / hướng mặt hiện tại
 func _get_smart_keyboard_aim_direction(max_auto_aim_range: float = 4.2) -> Vector3:
@@ -177,8 +194,8 @@ func _ready() -> void:
 	floor_stop_on_slope = true
 	floor_constant_speed = true
 	floor_block_on_wall = true
-	safe_margin = 0.05
-	wall_min_slide_angle = deg_to_rad(10.0)
+	safe_margin = 0.002
+	wall_min_slide_angle = 0.0
 
 	# --- Collision Shape (Task 23.3: tăng Capsule radius = 0.50m) ---
 	var col_shape := CollisionShape3D.new()
@@ -302,10 +319,11 @@ func _physics_process(delta: float) -> void:
 		if _landing_timer <= 0.0:
 			_jump_state = 0
 
-	# --- Cooldowns (Task 21.1 & 21.2) ---
+	# --- Cooldowns (Task 21.1 & 21.2 & 24.1) ---
 	_cd_q_timer = maxf(0.0, _cd_q_timer - delta)
 	_cd_rmb_timer = maxf(0.0, _cd_rmb_timer - delta)
 	_cd_e_timer = maxf(0.0, _cd_e_timer - delta)
+	_cd_dash_timer = maxf(0.0, _cd_dash_timer - delta)
 
 	# --- Combat Facing Lock (Task 21.5) ---
 	if _combat_facing_lock_timer > 0.0:
@@ -353,16 +371,16 @@ func _physics_process(delta: float) -> void:
 	elif velocity.y < 0.0:
 		velocity.y = 0.0
 
-	# --- Space: Instant Dash-Cancel (Task 19.4 Kỹ thuật C) ---
-	# Hủy mọi đòn đánh tức thì khi bấm Space để né đòn
-	if Input.is_action_just_pressed("dash"):
-		_action_lock_timer = 0.0
-		_is_spinning_q = false
-		_is_throwing_e = false
-		_lunge_timer = 0.0
-		_rmb_cleave_timer = 0.0
-		_do_dodge()
-		return
+	# --- Space: Instant Dash-Cancel có khóa Cooldown 1.0s chống spam (Task 24.1) ---
+	if _is_dash_just_pressed():
+		if _cd_dash_timer <= 0.0 and _dash_timer <= 0.0:
+			_action_lock_timer = 0.0
+			_is_spinning_q = false
+			_is_throwing_e = false
+			_lunge_timer = 0.0
+			_rmb_cleave_timer = 0.0
+			_do_dodge()
+			return
 
 	# --- Rebound Override (Task 19.3 Lớp 2): Dội ngược khi lướt trúng quái ---
 	if _rebound_timer > 0.0:
@@ -585,25 +603,6 @@ func _physics_process(delta: float) -> void:
 				if col_obj.has_method("apply_knockback"):
 					col_obj.apply_knockback(input_dir * 6.5)
 
-	# --- Anti-Stuck Depenetration Guard (Giải cứu kẹt góc) ---
-	if get_slide_collision_count() >= 2:
-		var horiz_spd := Vector2(velocity.x, velocity.z).length()
-		if horiz_spd < 0.05 and input_dir.length_squared() > 0.01:
-			_stuck_timer += delta
-			if _stuck_timer >= 0.35:
-				var push_dir := Vector3.ZERO
-				for i in range(get_slide_collision_count()):
-					var c := get_slide_collision(i)
-					push_dir += c.get_normal()
-				push_dir.y = 0.0
-				if push_dir.length_squared() > 0.01:
-					global_position += push_dir.normalized() * 0.15
-				_stuck_timer = 0.0
-		else:
-			_stuck_timer = 0.0
-	else:
-		_stuck_timer = 0.0
-
 	# Đảm bảo visual_root luôn khóa chặt theo _facing_angle khi combat facing lock còn hiệu lực
 	if visual_root and _combat_facing_lock_timer > 0.0:
 		visual_root.rotation.y = _facing_angle
@@ -613,11 +612,38 @@ func _physics_process(delta: float) -> void:
 
 
 # ==============================================================================
+# HÀM KIỂM TRA HÀNH LANG BƯỚC ĐI CẦU THANG (Task 24.2 Lớp 2: Stair Corridor Gate)
+# ==============================================================================
+func _is_in_stair_walk_corridor(pos: Vector3, move_dir: Vector3) -> bool:
+	var horiz := Vector2(move_dir.x, move_dir.z)
+	if horiz.length_squared() < 0.001:
+		return false
+	# Chỉ kích hoạt khi hướng di chuyển có thành phần đi lên/xuống dọc theo trục Z của cầu thang
+	if absf(horiz.normalized().y) < 0.30:
+		return false
+
+	# Tọa độ X của nhân vật phải nằm lọt trong lòng rãnh giữa cầu thang (center_x ± 1.18m):
+	# 1. Cầu thang Tây (Tầng 1 <-> 2): center_x = -6.0, Z từ -17.0 đến -11.0
+	if absf(pos.x - (-6.0)) <= 1.18 and pos.z >= -17.0 and pos.z <= -11.0:
+		return true
+	# 2. Cầu thang Đông (Tầng 1 <-> 2): center_x = +6.0, Z từ -17.0 đến -11.0
+	if absf(pos.x - 6.0) <= 1.18 and pos.z >= -17.0 and pos.z <= -11.0:
+		return true
+	# 3. Cầu thang Giữa (Tầng 2 <-> 3): center_x = 0.0, Z từ -29.0 đến -23.0
+	if absf(pos.x - 0.0) <= 1.18 and pos.z >= -29.0 and pos.z <= -23.0:
+		return true
+
+	return false
+
+
+# ==============================================================================
 # HÀM BƯỚC LÊN BẬC THANG TỰ ĐỘNG (_apply_stair_step_up)
 # Giới hạn chỉ kích hoạt khi vật cản phía trước thuộc group "stairs"
 # Khóa hoàn toàn khi đang Dash (Task 19.2)
 # ==============================================================================
 func _apply_stair_step_up(move_dir: Vector3, delta: float, is_dashing: bool = false) -> void:
+	if not _is_in_stair_walk_corridor(global_position, move_dir):
+		return
 	if _dash_timer > 0.0 and not is_dashing:
 		return
 	if move_dir.length_squared() < 0.01:
@@ -655,8 +681,10 @@ func _apply_stair_step_up(move_dir: Vector3, delta: float, is_dashing: bool = fa
 				global_position.y = move_toward(global_position.y, target_y + 0.02, 12.0 * delta)
 				velocity.y = maxf(velocity.y, 0.0)
 
-## Cảm biến dốc cầu thang phía trước khi Dash (Task 23.2)
+## Cảm biến dốc cầu thang phía trước khi Dash (Task 23.2 & 24.2)
 func _detect_stair_slope_ahead(dir: Vector3) -> Dictionary:
+	if not _is_in_stair_walk_corridor(global_position, dir):
+		return {"on_stairs": false, "slope_dy": 0.0}
 	var on_stairs := false
 	var slope_dy := 0.0
 	if is_on_floor() and get_floor_normal().y < 0.96:
@@ -957,6 +985,9 @@ func _do_ranged_throw(target_pos_override: Vector3 = Vector3.ZERO) -> void:
 
 
 func _do_dodge() -> void:
+	if _cd_dash_timer > 0.0:
+		return
+	_cd_dash_timer = COOLDOWN_DASH
 	var dodge_dir := _get_movement_input_vector()
 	if dodge_dir.length_squared() < 0.01:
 		if visual_root:
