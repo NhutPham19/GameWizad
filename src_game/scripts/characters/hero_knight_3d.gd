@@ -101,12 +101,75 @@ var _rmb_wave_spawned: bool = false
 var hp: float = 100.0
 var max_hp: float = 100.0
 
+# --- Task 23.4: Bộ đọc phím vật lý trực tiếp U - I - O - P (Chống Unikey nuốt phím) ---
+var _prev_skill_phys_keys: Dictionary = {
+	KEY_U: false,
+	KEY_I: false,
+	KEY_O: false,
+	KEY_P: false
+}
+
+func _is_skill_key_just_pressed(phys_key: Key, action_name: String) -> Dictionary:
+	var has_focus := true
+	var win := get_window()
+	if win and DisplayServer.get_name() != "headless":
+		has_focus = win.has_focus()
+	if not has_focus:
+		_prev_skill_phys_keys[phys_key] = false
+		return {"pressed": false, "from_keyboard": false}
+	var key_down := Input.is_physical_key_pressed(phys_key)
+	var was_down: bool = _prev_skill_phys_keys.get(phys_key, false)
+	_prev_skill_phys_keys[phys_key] = key_down
+	var kb_just_pressed := key_down and not was_down
+	var action_just_pressed := Input.is_action_just_pressed(action_name)
+	return {
+		"pressed": kb_just_pressed or action_just_pressed,
+		"from_keyboard": kb_just_pressed
+	}
+
+## Khi bấm U / I / P trên bàn phím: Ưu tiên nhắm vào Bot gần nhất trong tầm đánh trước mặt, hoặc đánh theo hướng chạy WASD / hướng mặt hiện tại
+func _get_smart_keyboard_aim_direction(max_auto_aim_range: float = 4.2) -> Vector3:
+	var move_vec := _get_movement_input_vector()
+	var base_dir := move_vec if move_vec.length_squared() > 0.01 else _get_forward_dir()
+
+	var best_bot_dir := Vector3.ZERO
+	var best_dist := max_auto_aim_range
+	for enemy in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(enemy) and enemy is Node3D and not enemy.get("is_dead"):
+			var diff: Vector3 = (enemy as Node3D).global_position - global_position
+			if absf(diff.y) <= 2.2:
+				diff.y = 0.0
+				var d := diff.length()
+				if d > 0.05 and d <= best_dist:
+					var dir_to_bot := diff.normalized()
+					if base_dir.dot(dir_to_bot) >= -0.15 or d <= 2.2:
+						best_dist = d
+						best_bot_dir = dir_to_bot
+	if best_bot_dir.length_squared() > 0.01:
+		return best_bot_dir
+	return base_dir
+
 
 func _ready() -> void:
 	# --- Group & Collision ---
 	add_to_group("player")
 	collision_layer = 2
 	collision_mask = 1 | 4
+
+	# Task 23.4: Đăng ký thêm KEY_U, KEY_I, KEY_O, KEY_P vào InputMap cho các action tương ứng
+	var map_bindings := {
+		"skill_lmb": KEY_U,
+		"skill_rmb": KEY_I,
+		"skill_q": KEY_O,
+		"skill_e": KEY_P
+	}
+	for act in map_bindings:
+		if not InputMap.has_action(act):
+			InputMap.add_action(act)
+		var ev := InputEventKey.new()
+		ev.physical_keycode = map_bindings[act]
+		ev.keycode = map_bindings[act]
+		InputMap.action_add_event(act, ev)
 
 	# --- Cấu hình CharacterBody3D chuẩn leo dốc / cầu thang (Directive 19 & 21) ---
 	floor_snap_length = 0.60
@@ -117,11 +180,11 @@ func _ready() -> void:
 	safe_margin = 0.05
 	wall_min_slide_angle = deg_to_rad(10.0)
 
-	# --- Collision Shape ---
+	# --- Collision Shape (Task 23.3: tăng Capsule radius = 0.50m) ---
 	var col_shape := CollisionShape3D.new()
 	col_shape.name = "PlayerCollision"
 	var capsule := CapsuleShape3D.new()
-	capsule.radius = 0.46
+	capsule.radius = 0.50
 	capsule.height = 1.80
 	col_shape.shape = capsule
 	col_shape.position = Vector3(0.0, 0.90, 0.0)
@@ -309,54 +372,32 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
-	# --- Dash Override (Task 19.2 & 19.3 & Directive 22 Stair Dash) ---
+	# --- Dash Override (Task 23.2: Lướt mượt từ dưới lên cầu thang 0% bị chặn) ---
 	if _dash_timer > 0.0:
 		_dash_timer -= delta
-		var effective_dash_speed := DASH_SPEED
-		var on_stair_slope := false
-		var slope_normal := Vector3.UP
+		var stair_state := _detect_stair_slope_ahead(_dash_dir)
+		var is_on_stairs: bool = stair_state["on_stairs"]
+		var slope_dy: float = stair_state["slope_dy"]
 
-		if is_on_floor() and get_floor_normal().y < 0.96:
-			on_stair_slope = true
-			slope_normal = get_floor_normal()
-		else:
-			for i in range(get_slide_collision_count()):
-				var col := get_slide_collision(i)
-				var col_obj = col.get_collider()
-				if col_obj is Node and (col_obj as Node).is_in_group("stairs"):
-					var n: Vector3 = col.get_normal()
-					if n.y > 0.3:
-						on_stair_slope = true
-						slope_normal = n
-						break
-
-		if not on_stair_slope:
-			var space_state := get_world_3d().direct_space_state
-			var ray_from := global_position + Vector3(0.0, 0.15, 0.0)
-			var ray_to := ray_from + _dash_dir * 0.65
-			var query := PhysicsRayQueryParameters3D.create(ray_from, ray_to, 1)
-			query.exclude = [get_rid()]
-			var hit := space_state.intersect_ray(query)
-			if not hit.is_empty():
-				var col_obj = hit.get("collider", null)
-				if col_obj is Node and (col_obj as Node).is_in_group("stairs"):
-					var n: Vector3 = hit.get("normal", Vector3.UP)
-					if n.y > 0.3:
-						on_stair_slope = true
-						slope_normal = n
-
-		if on_stair_slope:
-			effective_dash_speed = DASH_SPEED * 0.82
-			var slope_fwd := (_dash_dir - slope_normal * _dash_dir.dot(slope_normal)).normalized()
-			velocity = slope_fwd * effective_dash_speed
-		else:
+		if is_on_stairs:
+			floor_block_on_wall = false
+			var effective_dash_speed := DASH_SPEED * 0.88
 			velocity.x = _dash_dir.x * effective_dash_speed
 			velocity.z = _dash_dir.z * effective_dash_speed
+			# Nếu đang lướt theo chiều đi lên dốc cầu thang (slope_dy > 0), cấp vận tốc Y bám theo mặt dốc
+			if slope_dy > 0.02:
+				velocity.y = clampf((slope_dy / 0.85) * effective_dash_speed, 4.0, effective_dash_speed * 1.05)
+			elif slope_dy < -0.02:
+				velocity.y = clampf((slope_dy / 0.85) * effective_dash_speed, -effective_dash_speed * 1.05, -1.0)
+			_apply_stair_step_up(Vector3(velocity.x, 0.0, velocity.z), delta, true)
+		else:
+			floor_block_on_wall = true
+			velocity.x = _dash_dir.x * DASH_SPEED
+			velocity.z = _dash_dir.z * DASH_SPEED
 
 		move_and_slide()
-		# Kiểm tra va đập khi lướt vào bot (Task 19.3 Lớp 2)
+		floor_block_on_wall = true
 		_check_dash_impact_against_enemies()
-		_apply_wall_micro_separation(delta)
 		return
 
 	# --- Xoay Kiếm Q Đang Hoạt Động (Task 19.4 Kỹ thuật B & Task 21.2 Vacuum Pull) ---
@@ -449,35 +490,46 @@ func _physics_process(delta: float) -> void:
 	var input_dir := _get_movement_input_vector()
 	var can_act: bool = _action_lock_timer <= 0.0 and _jump_state == 0
 
-	# --- Xử lý hành động chiến đấu & Bộ đệm phím (Task 21.2) ---
-	if Input.is_action_just_pressed("skill_rmb"):
+	# --- Xử lý hành động chiến đấu & Bộ đệm phím (Task 23.4: U-I-O-P & Smart Auto-Aim) ---
+	var trig_u := _is_skill_key_just_pressed(KEY_U, "skill_lmb")
+	var trig_i := _is_skill_key_just_pressed(KEY_I, "skill_rmb")
+	var trig_o := _is_skill_key_just_pressed(KEY_O, "skill_q")
+	var trig_p := _is_skill_key_just_pressed(KEY_P, "skill_e")
+
+	if trig_i["pressed"]:
+		var aim_i := _get_smart_keyboard_aim_direction(5.5) if trig_i["from_keyboard"] else _get_stable_aim_direction()
 		if can_act and _cd_rmb_timer <= 0.0:
-			_do_rmb_cross_cleave()
+			_do_rmb_cross_cleave(aim_i)
 			return
 		elif _cd_rmb_timer <= 0.18 or _action_lock_timer <= 0.18:
 			_buffered_action = "skill_rmb"
 			_buffer_timer = 0.18
 
-	if Input.is_action_just_pressed("skill_q"):
+	if trig_o["pressed"]:
+		var aim_o := _get_smart_keyboard_aim_direction(4.0) if trig_o["from_keyboard"] else _get_stable_aim_direction()
 		if can_act and _cd_q_timer <= 0.0 and not _is_spinning_q:
-			_do_spin_attack()
+			_do_spin_attack(aim_o)
 			return
 		elif _cd_q_timer <= 0.18 or _action_lock_timer <= 0.18:
 			_buffered_action = "skill_q"
 			_buffer_timer = 0.18
 
-	if Input.is_action_just_pressed("skill_e"):
+	if trig_p["pressed"]:
 		if can_act and _cd_e_timer <= 0.0 and not _is_throwing_e:
-			_do_ranged_throw()
+			if trig_p["from_keyboard"]:
+				var throw_dir := _get_smart_keyboard_aim_direction(7.5)
+				_do_ranged_throw(global_position + throw_dir * 4.8)
+			else:
+				_do_ranged_throw()
 			return
 		elif _cd_e_timer <= 0.18 or _action_lock_timer <= 0.18:
 			_buffered_action = "skill_e"
 			_buffer_timer = 0.18
 
 	if can_act:
-		# LMB: Combo Chém 3 Nhịp
-		if Input.is_action_just_pressed("skill_lmb"):
-			_do_melee_combo()
+		if trig_u["pressed"]:
+			var aim_u := _get_smart_keyboard_aim_direction(3.5) if trig_u["from_keyboard"] else _get_stable_aim_direction()
+			_do_melee_combo(aim_u)
 			return
 
 		# C / Jump: Nhảy
@@ -565,8 +617,8 @@ func _physics_process(delta: float) -> void:
 # Giới hạn chỉ kích hoạt khi vật cản phía trước thuộc group "stairs"
 # Khóa hoàn toàn khi đang Dash (Task 19.2)
 # ==============================================================================
-func _apply_stair_step_up(move_dir: Vector3, delta: float) -> void:
-	if _dash_timer > 0.0:
+func _apply_stair_step_up(move_dir: Vector3, delta: float, is_dashing: bool = false) -> void:
+	if _dash_timer > 0.0 and not is_dashing:
 		return
 	if move_dir.length_squared() < 0.01:
 		return
@@ -602,6 +654,44 @@ func _apply_stair_step_up(move_dir: Vector3, delta: float) -> void:
 			if step_h > 0.02 and step_h <= 0.65 and normal.y >= 0.55:
 				global_position.y = move_toward(global_position.y, target_y + 0.02, 12.0 * delta)
 				velocity.y = maxf(velocity.y, 0.0)
+
+## Cảm biến dốc cầu thang phía trước khi Dash (Task 23.2)
+func _detect_stair_slope_ahead(dir: Vector3) -> Dictionary:
+	var on_stairs := false
+	var slope_dy := 0.0
+	if is_on_floor() and get_floor_normal().y < 0.96:
+		on_stairs = true
+		slope_dy = 0.85
+	var space_state := get_world_3d().direct_space_state
+	var horiz := Vector3(dir.x, 0.0, dir.z).normalized()
+	if horiz.length_squared() > 0.01:
+		# Tia 1: Quét ngang mũi giày (0.15m) và ống đồng (0.45m) phía trước 1.2m
+		for h_y in [0.15, 0.45]:
+			var from_p := global_position + Vector3(0.0, h_y, 0.0)
+			var q_fwd := PhysicsRayQueryParameters3D.create(from_p, from_p + horiz * 1.2, 1)
+			q_fwd.exclude = [get_rid()]
+			var hit_fwd := space_state.intersect_ray(q_fwd)
+			if not hit_fwd.is_empty():
+				var col_obj = hit_fwd.get("collider", null)
+				if (col_obj is Node and (col_obj as Node).is_in_group("stairs")) or (hit_fwd["normal"].y > 0.45 and hit_fwd["normal"].y < 0.96):
+					on_stairs = true
+					if slope_dy <= 0.02:
+						slope_dy = 0.85
+					break
+		# Tia 2: Đo độ chênh lệch độ cao mặt đất/dốc ở điểm phía trước 0.85m
+		var top_probe := global_position + horiz * 0.85 + Vector3(0.0, 1.4, 0.0)
+		var bot_probe := global_position + horiz * 0.85 + Vector3(0.0, -1.2, 0.0)
+		var q_down := PhysicsRayQueryParameters3D.create(top_probe, bot_probe, 1)
+		q_down.exclude = [get_rid()]
+		var hit_down := space_state.intersect_ray(q_down)
+		if not hit_down.is_empty():
+			var down_col = hit_down.get("collider", null)
+			if (down_col is Node and (down_col as Node).is_in_group("stairs")) or (hit_down["normal"].y > 0.45 and hit_down["normal"].y < 0.96):
+				on_stairs = true
+			var dy: float = hit_down["position"].y - global_position.y
+			if dy > slope_dy:
+				slope_dy = dy
+	return {"on_stairs": on_stairs, "slope_dy": slope_dy}
 
 
 # ==============================================================================
@@ -719,23 +809,9 @@ func _compute_clamped_bomb_target(raw_cursor_pos: Vector3) -> Vector3:
 		return floor_hit["position"] + Vector3(0.0, 0.05, 0.0)
 	return Vector3(candidate_xz.x, global_position.y, candidate_xz.z)
 
+# Task 23.5: Tắt hoàn toàn _apply_wall_micro_separation() để loại bỏ 100% rung giật vị trí
 func _apply_wall_micro_separation(_delta: float) -> void:
-	var space_state := get_world_3d().direct_space_state
-	var chest_origin := global_position + Vector3(0.0, 0.85, 0.0)
-	var min_safe_dist := 0.52
-	for i in range(8):
-		var angle := float(i) * (TAU / 8.0)
-		var dir := Vector3(cos(angle), 0.0, sin(angle))
-		var query := PhysicsRayQueryParameters3D.create(chest_origin, chest_origin + dir * min_safe_dist, 1)
-		query.exclude = [get_rid()]
-		var hit := space_state.intersect_ray(query)
-		if not hit.is_empty():
-			var normal: Vector3 = hit["normal"]
-			if absf(normal.y) < 0.35:
-				var hit_dist := Vector2(chest_origin.x - hit["position"].x, chest_origin.z - hit["position"].z).length()
-				if hit_dist < min_safe_dist:
-					var push_vec := Vector3(normal.x, 0.0, normal.z).normalized() * (min_safe_dist - hit_dist)
-					global_position += push_vec * 0.65
+	pass
 
 func _do_melee_combo(aim_override: Vector3 = Vector3.ZERO) -> void:
 	var aim_dir := aim_override if aim_override.length_squared() > 0.001 else _get_stable_aim_direction()

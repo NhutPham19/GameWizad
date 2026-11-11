@@ -15,6 +15,7 @@ extends Camera3D
 var shake_intensity: float = 0.0
 var shake_decay: float = 5.0
 var _faded_meshes: Array[MeshInstance3D] = []
+var _occlusion_timer: float = 0.0
 
 func _ready() -> void:
 	add_to_group("camera")
@@ -52,12 +53,15 @@ func _process(delta: float) -> void:
 		)
 		desired_pos += shake_offset
 
-	# Tối ưu độ mượt tần số quét cao 144Hz–240Hz: Frame-rate independent exponential smoothing
-	var weight := 1.0 - exp(-follow_speed * delta)
-	global_position = global_position.lerp(desired_pos, weight)
+	# Task 23.5: Đưa camera về _process(delta) với công thức hàm mũ độc lập 165Hz+
+	var smooth_weight := 1.0 - exp(-14.0 * delta)
+	global_position = global_position.lerp(desired_pos, smooth_weight)
 
-func _physics_process(_delta: float) -> void:
-	_update_occlusion_fade()
+	# Task 23.5: Cập nhật occlusion fade mỗi 0.15s thay vì chạy liên tục mỗi frame
+	_occlusion_timer -= delta
+	if _occlusion_timer <= 0.0:
+		_occlusion_timer = 0.15
+		_update_occlusion_fade()
 
 func _update_occlusion_fade() -> void:
 	if not is_instance_valid(target_node):
@@ -82,8 +86,12 @@ func _update_occlusion_fade() -> void:
 
 	if not hit.is_empty():
 		var hit_pos: Vector3 = hit["position"]
-		if hit_pos.distance_to(target_chest) > 0.4:
-			var collider = hit["collider"]
+		var hit_normal: Vector3 = hit.get("normal", Vector3.ZERO)
+		var collider = hit.get("collider", null)
+		# Task 23.5: Bỏ qua ngay lập tức nếu tia chạm phải sàn hoặc cầu thang (0% find_children trên sàn/thang)
+		if hit_normal.y > 0.45 or (collider is Node and (collider as Node).is_in_group("stairs")):
+			pass
+		elif hit_pos.distance_to(target_chest) > 0.4:
 			if collider is Node:
 				var node := collider as Node
 				var meshes: Array[Node] = []

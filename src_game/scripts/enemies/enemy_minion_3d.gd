@@ -653,23 +653,9 @@ func _set_status_tint(tint: Color) -> void:
 				sm.albedo_color = tint
 				mi.material_override = sm
 
+# Task 23.5: Tắt hoàn toàn _apply_wall_micro_separation() để loại bỏ rung giật
 func _apply_wall_micro_separation(_delta: float) -> void:
-	var space_state := get_world_3d().direct_space_state
-	var chest_origin := global_position + Vector3(0.0, 0.85, 0.0)
-	var min_safe_dist := 0.52
-	for i in range(8):
-		var angle := float(i) * (TAU / 8.0)
-		var dir := Vector3(cos(angle), 0.0, sin(angle))
-		var query := PhysicsRayQueryParameters3D.create(chest_origin, chest_origin + dir * min_safe_dist, 1)
-		query.exclude = [get_rid()]
-		var hit := space_state.intersect_ray(query)
-		if not hit.is_empty():
-			var normal: Vector3 = hit["normal"]
-			if absf(normal.y) < 0.35:
-				var hit_dist := Vector2(chest_origin.x - hit["position"].x, chest_origin.z - hit["position"].z).length()
-				if hit_dist < min_safe_dist:
-					var push_vec := Vector3(normal.x, 0.0, normal.z).normalized() * (min_safe_dist - hit_dist)
-					global_position += push_vec * 0.65
+	pass
 
 func apply_hit_stun(duration: float) -> void:
 	_hit_stun_timer = maxf(_hit_stun_timer, duration)

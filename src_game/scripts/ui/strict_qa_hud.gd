@@ -28,8 +28,9 @@ var telemetry_fps_label: Label
 var telemetry_primitive_label: Label
 var telemetry_skeleton_label: Label
 var telemetry_coord_label: Label
-var telemetry_blade_label: Label
+var telemetry_blade_label: Label = null
 var telemetry_enemies_label: Label
+var _ui_text_timer: float = 0.0
 
 var enemy_healthbar_drawer: Control
 
@@ -163,7 +164,7 @@ func _build_ui() -> void:
 	l_vbox.add_child(hero_anim_label)
 
 	hero_skills_label = Label.new()
-	hero_skills_label.text = "LMB: Combo 3 Nhịp | RMB: Khiên Phản Kích | Q: Xoay 360 | E: Bom Khói 3D | Space: Lướt | C: Nhảy"
+	hero_skills_label.text = "Phím Kỹ Năng: [U] Liên Trảm | [I] Phá Không Trảm | [O] Xoay 360° | [P] Bom Lôi Vụ | [Space] Lướt | [C] Nhảy"
 	hero_skills_label.add_theme_font_size_override("font_size", 11)
 	hero_skills_label.add_theme_color_override("font_color", Color(0.75, 0.8, 0.85))
 	hero_skills_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -239,13 +240,6 @@ func _build_ui() -> void:
 	telemetry_coord_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	r_vbox.add_child(telemetry_coord_label)
 
-	telemetry_blade_label = Label.new()
-	telemetry_blade_label.text = "Blade Tip: (0.00, 0.00, 0.00)"
-	telemetry_blade_label.add_theme_font_size_override("font_size", 11)
-	telemetry_blade_label.add_theme_color_override("font_color", Color(0.8, 0.85, 0.9))
-	telemetry_blade_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	r_vbox.add_child(telemetry_blade_label)
-
 	telemetry_enemies_label = Label.new()
 	telemetry_enemies_label.text = "Enemies Alive: 5 / 5 (Tier 1: 2 | Tier 2: 2 | Tier 3: 1)"
 	telemetry_enemies_label.add_theme_font_size_override("font_size", 12)
@@ -253,7 +247,7 @@ func _build_ui() -> void:
 	telemetry_enemies_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	r_vbox.add_child(telemetry_enemies_label)
 
-	# --- 4. GIAO DIỆN THANH TRẠNG THÁI SKILL COOLDOWN DƯỚI ĐÁY MÀN HÌNH (Task 21.2) ---
+	# --- 4. GIAO DIỆN THANH TRẠNG THÁI SKILL COOLDOWN DƯỚI ĐÁY MÀN HÌNH (Task 21.2 & 23.4) ---
 	var bottom_panel := PanelContainer.new()
 	bottom_panel.name = "SkillCooldownBar"
 	bottom_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -286,7 +280,7 @@ func _build_ui() -> void:
 
 	skill_cooldown_label = Label.new()
 	skill_cooldown_label.name = "SkillCooldownLabel"
-	skill_cooldown_label.text = "[LMB] Liên Trảm: SẴN SÀNG  |  [RMB] Phá Không Trảm: SẴN SÀNG  |  [Q] Cuồng Phong 360°: SẴN SÀNG  |  [E] Bom Lôi Vụ (7.5m): SẴN SÀNG"
+	skill_cooldown_label.text = "[U] Liên Trảm: SẴN SÀNG  |  [I] Phá Không Trảm: SẴN SÀNG  |  [O] Cuồng Phong 360°: SẴN SÀNG  |  [P] Bom Lôi Vụ (7.5m): SẴN SÀNG"
 	skill_cooldown_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	skill_cooldown_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	skill_cooldown_label.add_theme_font_size_override("font_size", 13)
@@ -315,10 +309,14 @@ func _process(delta: float) -> void:
 
 	_scan_timer -= delta
 	if _scan_timer <= 0.0:
-		_scan_timer = 0.5
+		_scan_timer = 2.0
 		_perform_scans()
 
-	_update_telemetry_display(delta)
+	# Task 23.5: Giới hạn cập nhật UI chữ 5 lần/giây (0.2s) để màn hình 165Hz+ mượt tuyệt đối
+	_ui_text_timer -= delta
+	if _ui_text_timer <= 0.0:
+		_ui_text_timer = 0.20
+		_update_telemetry_display(delta)
 
 func _perform_scans() -> void:
 	# 1. Zero Primitive Scan
@@ -385,11 +383,7 @@ func _update_telemetry_display(delta: float) -> void:
 		var delta_y := absf(hero_y - ground_y)
 		telemetry_coord_label.text = "[MULTI-TIER COORD]: Hero_Y: %.2fm | Ground_Y: %.2fm (ΔY: %.2fm)" % [hero_y, ground_y, delta_y]
 
-		if "blade_tip_marker" in hero and hero.blade_tip_marker and is_instance_valid(hero.blade_tip_marker):
-			var tip: Vector3 = hero.blade_tip_marker.global_position
-			telemetry_blade_label.text = "Blade Tip: (%.2f, %.2f, %.2f)" % [tip.x, tip.y, tip.z]
-
-		# Update Skill Cooldowns (Task 21.2)
+		# Update Skill Cooldowns (Task 21.2 & 23.4: U-I-O-P)
 		if skill_cooldown_label != null:
 			var rmb_text := "SẴN SÀNG"
 			if "_cd_rmb_timer" in hero and hero._cd_rmb_timer > 0.05:
@@ -403,7 +397,7 @@ func _update_telemetry_display(delta: float) -> void:
 			if "_cd_e_timer" in hero and hero._cd_e_timer > 0.05:
 				e_text = "CD: %.1fs" % hero._cd_e_timer
 
-			skill_cooldown_label.text = "[LMB] Liên Trảm: SẴN SÀNG   |   [RMB] Phá Không Trảm: %s   |   [Q] Cuồng Phong 360°: %s   |   [E] Bom Lôi Vụ (7.5m): %s" % [rmb_text, q_text, e_text]
+			skill_cooldown_label.text = "[U] Liên Trảm: SẴN SÀNG   |   [I] Phá Không Trảm: %s   |   [O] Cuồng Phong 360°: %s   |   [P] Bom Lôi Vụ (7.5m): %s" % [rmb_text, q_text, e_text]
 
 	# Enemies count
 	var enemies := get_tree().get_nodes_in_group("enemies")
