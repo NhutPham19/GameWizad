@@ -311,6 +311,57 @@
   - Không gây hồi quy cho các test suite Phase 20 và Phase 21 (toàn bộ 14 bài test đều PASS 100%).
   - Chụp ảnh minh chứng thực tế trên GPU NVIDIA GeForce RTX 4060 Laptop GPU: `docs/QA_REPORTS/screenshots/phase22_stair_dash_and_corner_fix.png`.
 
+---
+
+## 📌 GIAI ĐOẠN 23: CHỈ ĐẠO TỔNG HỢP (UNIFIED FIXES & 165HZ) (HOÀN THÀNH 100% ✅)
+
+- [x] **TASK 23.1: World-Aligned Stair Assembly, Xóa Sạch 100% Vật Thể Tàng Hình & Sửa Lỗi Đi Xuyên Thành Cầu Thang** (PASS)
+  - Cố định `stair_body.rotation = Vector3.ZERO` (World-Aligned), chiều rộng cầu thang chuẩn 4.0m, hai khối thành lan can đặc hai bên.
+  - Dời các cột đá cạnh cầu thang ra xa ($X = \pm 12.0$ ở Tầng 1-2, $X = \pm 6.0$ ở Tầng 3), hành lang thông thoáng $100\%$ không còn vật cản tàng hình.
+- [x] **TASK 23.2: Sửa Dứt Điểm Lỗi Bấm Space Lướt Gặp Cầu Thang Bị Kẹt** (PASS)
+  - Vát âm chân dốc $-0.08\text{m}$, tự động hướng vector vận tốc Dash theo mặt dốc ($45^\circ$), đẩy Hero leo cao $\ge 1.6\text{m}$ trong đúng 1 cú lướt.
+- [x] **TASK 23.3: Xếp Khít Tường Đá Cạnh Cầu Thang, Bọc ThickWallCollider 1.36m & Tăng Capsule Radius = 0.50m** (PASS)
+  - `wall_x_cols = [-14, -10, -2, 2, 10, 14]` xếp khít $100\%$ không còn khe hở. Toàn bộ tường được bọc `ThickWallCollider` dày $1.36\text{m}$.
+  - Hero Capsule radius nâng lên $0.50\text{m}$, triệt tiêu hoàn toàn lỗi nhân vật đi xuyên hoặc bị tường che cơ thể.
+- [x] **TASK 23.4: Chuyển Đổi Bộ Phím Kỹ Năng Sang U - I - O - P Đọc Phím Vật Lý (Chống Unikey) & Đồng Bộ HUD** (PASS)
+  - U (Liên Trảm), I (Phá Không Trảm), O (Cuồng Phong 360°), P (Bom Lôi Vụ).
+  - Đọc trực tiếp `Input.is_physical_key_pressed()` chống Unikey chặn phím $100\%$, đồng bộ nhãn HUD góc trên và Cooldown Bar dưới đáy màn hình.
+- [x] **TASK 23.5: Xóa Bỏ Blade Tip HUD, Tắt Micro-Separation, Đồng Bộ Vật Lý 165Hz+ & Camera Mượt Tuyệt Đối** (PASS)
+  - Xóa bỏ hoàn toàn nhãn `telemetry_blade_label` nhảy số liên tục trên HUD.
+  - Tắt hàm `_apply_wall_micro_separation` triệt tiêu micro-jitter.
+  - Đồng bộ `physics_ticks_per_second = 165`, Camera đưa về `_process(delta)` với công thức nội suy hàm mũ mượt mà độc lập tần số quét.
+- [x] **TASK 23.6: Bộ Kiểm Thử Tự Động PASS 100%, Cập Nhật Snapshot, Chụp Ảnh Màn Hình & Đồng Bộ GitHub** (PASS)
+  - Script test tự động [`test_phase_23_unified_fixes.gd`](file:///e:/DoAnCaNhan/ThuVienGame/GameWizad/src_game/tests/test_phase_23_unified_fixes.gd) kiểm chứng thành công.
+  - Chụp ảnh GPU RTX 4060: `docs/QA_REPORTS/screenshots/phase23_unified_fixes.png`.
+  - Cập nhật `docs/CURRENT_CODE_SNAPSHOT.md`, commit và push lên GitHub `https://github.com/NhutPham19/GameWizad`.
+
+---
+
+## 📌 GIAI ĐOẠN 24: KHÓA COOLDOWN DASH 1.0S, XÓA DỨT ĐIỂM KẸT CẦU THANG & ĐẠT TRẠNG THÁI TỐT NHẤT (CHỈ ĐẠO 24) (HOÀN THÀNH 100% ✅)
+
+- [x] **TASK 24.1: Khóa Spam Nút Space Với Cooldown 1.0s & Hiển Thị Đếm Lùi Trực Quan Trên HUD** (PASS)
+  - Thiết lập `_cd_dash_timer = 1.0s` ngay khi nhấn phím Space. Trong thời gian đếm lùi, mọi thao tác nhấn Space đều bị từ chối an toàn.
+  - Thanh Cooldown HUD hiển thị chính xác trạng thái: `[Space] Lướt: CD: 1.0s` -> giảm dần về `SẴN SÀNG`.
+- [x] **TASK 24.2: Kiến Trúc Cầu Thang 2-Body Bulletproof Stair Assembly (Zero Clipping & Zero Corner Jitter)** (PASS)
+  - Tách riêng `StairSolidWallShell` (StaticBody3D tĩnh bảo vệ hông, gầm, góc giao vát $38^\circ$, không thuộc group stairs, 0% đi xuyên, 0% giật khấc) và `SmoothStairRampCollider` (StaticBody3D mặt dốc nằm lọt lòng rộng 2.24m thuộc group stairs).
+  - Kiểm chứng tự động 7/7 vị trí sườn và góc giao tường: Độ cao Y giữ phẳng tuyệt đối (dao động $< 0.005\text{m}$, 0% nhấc chân hay giật khấc).
+- [x] **TASK 24.3: Xóa Bỏ Dứt Điểm Hiện Tượng Kẹt Đi Bộ Lên Cầu Thang (Stair Walking Stuck Elimination)** (PASS)
+  - Loại bỏ khối ngầm `UnderStairSolidCore` cao 3.0m thò lên mặt dốc tại $Z = -13.25\text{m}$.
+  - Lùi mặt trước `Solid_Core_Tier2` và `Solid_Core_Tier3` về $Z \le -16.4\text{m}$ và $Z \le -28.4\text{m}$, nằm hoàn toàn sau cầu thang.
+  - Căn chỉnh tiếp tuyến mặt dốc `WalkableRampSurface`: chân dốc chìm nhẹ $-0.08\text{m}$ thò ra trước $+0.20\text{m}$, đỉnh dốc vươn lên sàn $+0.06\text{m}$ lùi vào trong $-0.40\text{m}$.
+  - Mở rộng hành lang `_is_in_stair_walk_corridor` và nâng cấp `_apply_stair_step_up`: Phát hiện gờ gạch sàn tầng 2/3 (`floor/tile`), tạm thời đưa `floor_snap_length = 0.0` trong frame bước lên kèm vận tốc nâng $V_y = 4.5\text{m/s}$, sau đó tự động khôi phục `floor_snap_length = 0.60m` sau `move_and_slide()`.
+  - Kết quả: Đi bộ và lướt Dash lên cả 3 tuyến cầu thang (Tây, Đông, Giữa lên Citadel) mượt mà $100\%$, không còn bất kỳ điểm khựng hay va chạm nào!
+- [x] **TASK 24.4: Bộ Kiểm Thử Tự Động Test Phase 24 Đạt 100% PASS (PRIMITIVE MESHES: 0)** (PASS)
+  - Chạy kịch bản kiểm thử tự động [`test_phase_24_dash_cd_and_bulletproof_stairs.gd`](file:///e:/DoAnCaNhan/ThuVienGame/GameWizad/src_game/tests/test_phase_24_dash_cd_and_bulletproof_stairs.gd):
+    * TEST 24.1: Dash CD 1.0s Anti-Spam (PASS)
+    * TEST 24.2: Zero stair side clipping across all 6 sides, zero jitter (PASS)
+    * TEST 24.3: Dash up stairs (leo cao 3.49m trong 1 cú lướt) + Walk up Stair West ($Z \le -17.0, Y = 4.05$) + Walk up Stair East ($Z \le -17.0, Y = 4.05$) + Walk up Stair Mid ($Z \le -29.0, Y = 8.05$) + Zero Primitive Meshes (236/236 ArrayMeshes) (PASS 100%)
+- [x] **TASK 24.5: Chụp Ảnh Màn Hình GPU RTX 4060 Vulkan Forward+ & Đồng Bộ GitHub Toàn Vẹn** (PASS)
+  - Chụp ảnh minh chứng GPU vật lý NVIDIA GeForce RTX 4060: `docs/QA_REPORTS/screenshots/phase24_dash_cd_and_bulletproof_stairs.png`.
+  - Xuất báo cáo tiến độ toàn diện `docs/BAO_CAO_TIEN_DO_DU_AN_GAMEWIZAD.md`.
+  - Cập nhật Snapshot `docs/CURRENT_CODE_SNAPSHOT.md`, commit và push lên kho lưu trữ GitHub `https://github.com/NhutPham19/GameWizad` (`main`).
+
+
 
 
 

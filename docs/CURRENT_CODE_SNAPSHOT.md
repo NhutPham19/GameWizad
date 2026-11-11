@@ -1,5 +1,5 @@
 ﻿# 📦 GAMEWIZAD - CURRENT CODE SNAPSHOT
-Thời gian xuất: 2026-11-11 22:53:46
+Thời gian xuất: 2026-11-11 23:06:05
 Môi trường: Godot Engine 4.3+ | Renderer: Forward+ (NVIDIA RTX 4060)
 Kiến trúc: 100% KayKit GLB/GLTF - Zero Primitive Geometry (0% Hình Khối Cơ Bản)
 
@@ -17197,15 +17197,17 @@ func _init() -> void:
 	# 2. KIỂM TRA BƯỚC ĐI BỘ LÊN CẢ 3 TUYẾN CẦU THANG THÔNG SUỐT 100% (ZERO KẸT CHÂN / GỜ SÀN)
 	const GRAV := 19.6
 
-	# Tạm thời dời lính ra xa 100m để kiểm tra thuần túy hình học và va chạm của 3 tuyến cầu thang
+	# Tạm thời vô hiệu hóa va chạm và AI của quái để kiểm tra thuần túy hình học và va chạm của 3 tuyến cầu thang
 	var enemies_node := arena.get_node_or_null("Enemies") as Node3D
-	var original_enemy_positions := {}
+	var disabled_enemies: Array[CollisionObject3D] = []
 	if enemies_node:
 		for e in enemies_node.get_children():
-			if e is Node3D:
-				var ne := e as Node3D
-				original_enemy_positions[ne] = ne.global_position
-				ne.global_position += Vector3(100.0, 0.0, 0.0)
+			if e is CollisionObject3D:
+				var ce := e as CollisionObject3D
+				ce.collision_layer = 0
+				ce.collision_mask = 0
+				ce.process_mode = Node.PROCESS_MODE_DISABLED
+				disabled_enemies.append(ce)
 
 	# 2A. Bước đi bộ lên Cầu Thang Tây (X = -6.0) từ Tầng 1 lên sàn Tầng 2
 	print("\n  - [2A] Đi bộ lên Cầu Thang Tây (X = -6.0) từ Z = -10.0 lên Tầng 2 (Z <= -17.0, Y >= 3.95m)...")
@@ -17279,10 +17281,12 @@ func _init() -> void:
 		printerr("    FAIL: Đi bộ Cầu Thang Giữa bị kẹt tại %s!" % str(hero.global_position))
 		all_pass = false
 
-	# Phục hồi lại vị trí ban đầu của quái
-	for ne in original_enemy_positions:
-		if is_instance_valid(ne):
-			ne.global_position = original_enemy_positions[ne]
+	# Phục hồi lại trạng thái hoạt động của quái
+	for ce in disabled_enemies:
+		if is_instance_valid(ce):
+			ce.collision_layer = 4
+			ce.collision_mask = 1 | 2 | 4
+			ce.process_mode = Node.PROCESS_MODE_INHERIT
 
 	# 3. Kiểm tra Luật Thép: Tuyệt đối 0 Primitive Meshes (BoxMesh, SphereMesh, CylinderMesh, ...)
 	var total_mesh_instances := 0
