@@ -2,11 +2,13 @@ class_name ShaderPrewarmer
 extends Node
 
 # ==============================================================================
-# SHADER PREWARMER - VULKAN PSO PIPELINE CACHE ACCELERATOR
-# Eliminates initial shader compilation stutter (0ms lag entering map)
+# SHADER PREWARMER - VULKAN PSO PIPELINE CACHE ACCELERATOR (Directive 25)
+# 100% ZERO PRIMITIVE MESHES (Uses get_safe_particle_quad_mesh)
+# Eliminates initial shader compilation stutter (165Hz+ zero-stutter)
 # ==============================================================================
 
 const SHADERS_TO_PREWARM := [
+	"res://shaders/vfx_stylized_slash.gdshader",
 	"res://shaders/vfx_elemental_energy.gdshader",
 	"res://shaders/vfx_ground_cracks_decal.gdshader",
 	"res://shaders/vfx_shockwave_distortion.gdshader",
@@ -20,6 +22,15 @@ const MATERIALS_TO_PREWARM := [
 	"res://materials/water_sanctum_turquoise.tres",
 ]
 
+const KENNEY_TEXTURES_TO_PREWARM := [
+	"res://assets/vfx_textures/kenney_particles/star_07.png",
+	"res://assets/vfx_textures/kenney_particles/light_01.png",
+	"res://assets/vfx_textures/kenney_particles/circle_02.png",
+	"res://assets/vfx_textures/kenney_particles/circle_04.png",
+	"res://assets/vfx_textures/kenney_particles/scorch_02.png",
+	"res://assets/vfx_textures/kenney_particles/spark_05.png",
+]
+
 static func prewarm(parent_node: Node) -> void:
 	if not parent_node or not parent_node.is_inside_tree():
 		return
@@ -30,6 +41,11 @@ static func prewarm(parent_node: Node) -> void:
 		parent_node.add_child(prewarmer)
 
 func _ready() -> void:
+	# Pre-cache Prismatic Color Ramp & Kenney Textures (Task 25.5)
+	KayKitVFXManager._get_prismatic_color_ramp()
+	for tex_path in KENNEY_TEXTURES_TO_PREWARM:
+		KayKitVFXManager._load_cached_tex(tex_path)
+
 	var vp = SubViewport.new()
 	vp.size = Vector2i(2, 2)
 	add_child(vp)
@@ -44,9 +60,7 @@ func _ready() -> void:
 			var shader = ResourceLoader.load(s_path) as Shader
 			if shader:
 				var mi = MeshInstance3D.new()
-				var box = BoxMesh.new()
-				box.size = Vector3(0.1, 0.1, 0.1)
-				mi.mesh = box
+				mi.mesh = KayKitVFXManager.get_safe_particle_quad_mesh(Vector2(0.1, 0.1))
 				var smat = ShaderMaterial.new()
 				smat.shader = shader
 				mi.material_override = smat
@@ -58,12 +72,10 @@ func _ready() -> void:
 			var mat = ResourceLoader.load(m_path) as Material
 			if mat:
 				var mi = MeshInstance3D.new()
-				var box = BoxMesh.new()
-				box.size = Vector3(0.1, 0.1, 0.1)
-				mi.mesh = box
+				mi.mesh = KayKitVFXManager.get_safe_particle_quad_mesh(Vector2(0.1, 0.1))
 				mi.material_override = mat
 				vp.add_child(mi)
 				count += 1
 				
-	print("🔥 [VULKAN PSO PREWARM] Pre-warmed ", count, " shaders & materials into GPU cache.")
+	print("🔥 [VULKAN PSO PREWARM] Pre-warmed ", count, " shaders & materials into GPU cache (0% PrimitiveMesh).")
 	queue_free()

@@ -881,7 +881,8 @@ func _do_melee_combo(aim_override: Vector3 = Vector3.ZERO) -> void:
 	_combo_index = (_combo_index + 1) % COMBO_SEQUENCE.size()
 	_combo_timer = COMBO_WINDOW + 0.24
 
-	_apply_melee_hit_detection(MELEE_DAMAGE, MELEE_RANGE, false)
+	var dmg := 35.0 if current_step == 2 else MELEE_DAMAGE
+	_apply_melee_hit_detection(dmg, MELEE_RANGE if current_step < 2 else 3.2, false)
 
 
 func _do_rmb_cross_cleave(aim_override: Vector3 = Vector3.ZERO) -> void:
@@ -905,42 +906,43 @@ func _do_rmb_cross_cleave(aim_override: Vector3 = Vector3.ZERO) -> void:
 	_rmb_wave_spawned = false
 	_action_lock_timer = 0.32
 
+	# Sinh 3 Tàn Ảnh Mô Hình KayKit Thật dọc theo bước lướt (Task 25.4)
+	if visual_root:
+		KayKitVFXManager.spawn_prismatic_hero_afterimage(get_tree(), visual_root, Color(1.0, 0.84, 0.0), 0.28) # Vàng Hoàng Kim (#FFD700)
+		var tw_ghost := create_tween()
+		tw_ghost.tween_interval(0.04)
+		tw_ghost.tween_callback(func():
+			if is_instance_valid(visual_root):
+				KayKitVFXManager.spawn_prismatic_hero_afterimage(get_tree(), visual_root, Color(1.0, 0.10, 0.55), 0.28) # Hồng Cực Quang (#FF1A8C)
+		)
+		tw_ghost.tween_interval(0.05)
+		tw_ghost.tween_callback(func():
+			if is_instance_valid(visual_root):
+				KayKitVFXManager.spawn_prismatic_hero_afterimage(get_tree(), visual_root, Color(0.0, 0.94, 1.0), 0.28) # Lam Điện Quang (#00F0FF)
+		)
+
 	# Phase 1: 25.0 DMG trong quạt 3.5m trước mặt
 	_apply_melee_hit_detection(25.0, 3.5, false)
 
-	# 4-layer VFX (Task 21.3)
-	KayKitVFXManager.spawn_rmb_solar_cross_cleave(global_position, _facing_angle, get_tree().current_scene)
+	# 4-layer X-Slash VFX (Task 25.4)
+	KayKitVFXManager.spawn_rmb_solar_cross_cleave(get_tree(), global_position, locked_attack_dir)
 
 
 func _trigger_rmb_phase_two(fwd_dir: Vector3) -> void:
-	var hit_any := false
-	var enemies := get_tree().get_nodes_in_group("enemies")
-	var wave_origin := global_position
-	for enemy in enemies:
-		if not is_instance_valid(enemy) or not (enemy is Node3D):
-			continue
-		var e_node := enemy as Node3D
-		var diff := e_node.global_position - wave_origin
-		diff.y = 0.0
-		var forward_dist := fwd_dir.dot(diff)
-		if forward_dist >= 0.0 and forward_dist <= 5.2:
-			var perp_dist := (diff - fwd_dir * forward_dist).length()
-			if perp_dist <= 2.0 and absf(e_node.global_position.y - wave_origin.y) <= 2.0:
-				hit_any = true
-				if enemy.has_method("take_damage"):
-					enemy.take_damage(30.0, fwd_dir)
-				if enemy.has_method("apply_knockback"):
-					enemy.apply_knockback(fwd_dir * 11.0)
-				if enemy.has_method("apply_hit_stun"):
-					enemy.apply_hit_stun(0.65)
-				KayKitVFXManager.spawn_cross_slash_hit_impact(e_node.global_position + Vector3(0.0, 0.95, 0.0))
-
-	if hit_any:
-		var cam := get_viewport().get_camera_3d()
-		if cam != null and cam.has_method("add_screen_shake"):
-			cam.add_screen_shake(0.12)
-		elif cam != null and cam.has_method("add_shake"):
-			cam.add_shake(0.12)
+	# Phase 2: Đại Sóng Kiếm Khí Tam Dực Càn Quét 4.8m Mặt Đất (Directive 25 Task 25.4)
+	KayKitVFXManager.spawn_rmb_traveling_crescent_wave(
+		get_tree(),
+		global_position,
+		fwd_dir,
+		4.8,
+		18.0,
+		30.0
+	)
+	var cam := get_viewport().get_camera_3d()
+	if cam != null and cam.has_method("add_screen_shake"):
+		cam.add_screen_shake(0.12)
+	elif cam != null and cam.has_method("add_shake"):
+		cam.add_shake(0.12)
 
 
 func _do_block_counter() -> void:
