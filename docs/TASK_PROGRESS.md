@@ -394,7 +394,31 @@
 
 ---
 
-## 📌 GIAI ĐOẠN 26: TRẠNG THÁI THỨ 2 KÍCH HOẠT NỘ (PHÍM [R] 10S/6S), ĐỔI PHÍM CHƠI LẠI SANG [F1] & ĐẠI TU HIỆU ỨNG ĐỎ - XANH DƯƠNG ĐỌNG LẠI, PHÌNH TO UY LỰC (CHỈ ĐẠO 26) (HOÀN THÀNH 100% ✅)
+## 📌 GIAI ĐOẠN 27: ĐẠI TU HÀO QUANG NỘ 6 LỚP ĐẶC SẮC & HỆ THỐNG ÂM THANH TOÀN DIỆN KAYKITAUDIODIRECTOR (CHỈ ĐẠO 27) (HOÀN THÀNH 100% ✅)
+
+- [x] **TASK 27.1: Đại Tu Hào Quang Trạng Thái 2 [R] Thành "Linh Giáp Cực Quang Huyết Lam 6 Lớp"** (PASS)
+  - `WingsPivot`: 4 cánh kiếm khí dải lụa cong Đỏ Huyết (`#FF0824`) & Xanh Dương (`#0066FF`) sau vai vỗ nhịp `sin(t * 7.5) * 0.18`.
+  - `GyroRings`: 3 Vòng Tinh Hoàn 3D xoay chéo quanh thân (+32°, -32° và vòng ngang thắt lưng Y=0.22m R=1.55m) xoay từ 4.8 đến 6.5 rad/s.
+  - `GroundSanctum`: Đại trận pháp Liên Hoa 3 tầng Decal (`circle_04.png`, `circle_02.png`, `star_07.png`) xoay ngược chiều và co giãn `1.0 + 0.14 * sin(t * 9.0)`.
+  - Hai hệ hạt `GPUParticles3D`: `RageCrimsonFlameAura` (28 hạt `flame_04.png`) và `RageCobaltLightningSparks` (24 hạt `spark_06.png`).
+  - `RageAuraLight`: Đèn `OmniLight3D` phạm vi 5.5m chuyển đổi màu sắc Đỏ - Xanh & hoa đăng mũi kiếm `WeaponGlowFlare`.
+  - Layer 6 Tàn ảnh chạy: Khi di chuyển trong Nộ, tự động để lại tàn ảnh mô hình KayKit thật mỗi 0.16s xen kẽ Đỏ - Xanh.
+  - Tuyệt đối 0% PrimitiveMesh (`PrimitiveMesh == 0`), 100% sử dụng `ArrayMesh`.
+- [x] **TASK 27.2: Xây Dựng Hệ Thống Âm Thanh Toàn Diện `KayKitAudioDirector` (Pre-baked 44.1kHz, 24 Audio Pool Channels, 0ms Lag)** (PASS)
+  - Kho âm thanh phòng thu 23 mẫu SFX & BGM nạp 100% vào RAM lúc khởi động (44,100Hz 16-bit PCM).
+  - Audio Pool 24 kênh `AudioStreamPlayer` đa luồng, Polyphonic Voice Limiter (ngưỡng ngắt kích hoạt 0.035s) và biến thiên pitch ngẫu nhiên 0.95 - 1.06x.
+  - BGM Player chuyên dụng phát vòng lặp chiến trận, tự động chuyển nhịp dồn dập (pitch 1.00 -> 1.08x, volume -14dB -> -11dB) khi bật Nộ `[R]`.
+- [x] **TASK 27.3: Kết Nối Âm Thanh Vào Toàn Bộ Chiêu Thức, Nhân Vật & Bot** (PASS)
+  - Nhân vật: Bước chân trên đá `footstep_stone` (mỗi 0.22s khi Nộ, 0.26s khi thường), lướt né `dash_space`, nhảy `jump_c`, gầm thức tỉnh Nộ `rage_r_awaken`, hạ nhiệt Nộ `rage_r_expire`.
+  - Kỹ năng: Combo U1/U2/U3 (`u1_slash`, `u2_slash`, `u3_heaven_shatter` vs `u1_rage`, `u2_rage`, `u3_rage_dragon_fall`), Chiêu I Pha 1 & Pha 2 (`i_phase1_x_cleave`, `i_phase2_wave_launch`, `i_wave_finale` vs `i_rage_hexa_cleave`, `i_rage_five_wing_wave`), Chiêu O `o_whirlwind_spin`, Chiêu P `p_bomb_throw`, `p_bomb_thunder_explode`, `p_bomb_dot_zap`.
+  - Kẻ địch: Trúng đòn `hit_enemy_flesh_metal`, chết tan rã `enemy_death_burst`.
+- [x] **TASK 27.4: Kiểm Thử Tự Động 100% PASS, Tiền Nạp Shader & Minh Chứng RTX 4060** (PASS)
+  - Kịch bản kiểm thử [`test_phase_27_rage_aura_6layers_and_audio_system.gd`](file:///e:/DoAnCaNhan/ThuVienGame/GameWizad/src_game/tests/test_phase_27_rage_aura_6layers_and_audio_system.gd) PASS 4/4 bài kiểm tra.
+  - Hồi quy toàn diện: `test_phase_26`, `test_phase_25`, `test_phase_24` đạt 100% PASS (`primitive_count == 0`, Dash CD 1.0s, cầu thang Phase 24 vững chắc).
+  - Chụp 2 ảnh màn hình thực tế trên GPU NVIDIA GeForce RTX 4060 Laptop GPU: `docs/QA_REPORTS/screenshots/phase27_1_ultimate_rage_aura_6layers.png` và `phase27_2_rage_combat_with_audio_telemetry.png`.
+  - Xuất báo cáo nghiệm thu [PHASE_27_RAGE_AURA_6LAYERS_AND_AUDIO_QA_REPORT.md](file:///e:/DoAnCaNhan/ThuVienGame/GameWizad/docs/QA_REPORTS/PHASE_27_RAGE_AURA_6LAYERS_AND_AUDIO_QA_REPORT.md).
+  - Đồng bộ toàn vẹn lên kho lưu trữ GitHub `https://github.com/NhutPham19/GameWizad` (`main`).
+
 
 - [x] **TASK 26.1: Chuyển Phím "Chơi Lại" Từ [R] Sang [F1] & Giải Phóng Phím [R] Cho Kích Hoạt Nộ** (PASS)
   - Cập nhật nhãn nút Restart trên HUD thành `"🔄 CHƠI LẠI (Phím F1)"`.

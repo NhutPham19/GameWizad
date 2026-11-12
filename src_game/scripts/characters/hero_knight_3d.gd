@@ -1,6 +1,8 @@
 class_name HeroKnight3D
 extends CharacterBody3D
 
+const KayKitAudioDirector = preload("res://scripts/audio/kaykit_audio_director.gd")
+
 # ==============================================================================
 # HERO KNIGHT 3D — DIRECTIVE 16 (PHASE 4 & 6)
 # Điều khiển duy nhất 1 Knight.glb: chuyển động mượt mà 12 kiểu dáng,
@@ -113,6 +115,11 @@ var _cd_rage_r_timer: float = 0.0
 var _prev_r_phys_down: bool = false
 var _rage_aura_node: Node3D = null
 
+# --- Hệ Thống Âm Thanh & Bước Chân & Tàn Ảnh Chạy Nộ (Directive 27) ---
+var _footstep_timer: float = 0.0
+var _rage_afterimage_timer: float = 0.0
+var _rage_afterimage_toggle: bool = false
+
 # --- Stats ---
 var hp: float = 100.0
 var max_hp: float = 100.0
@@ -171,28 +178,37 @@ func _is_rage_key_just_pressed() -> bool:
 	_prev_r_phys_down = r_down
 	return r_just_pressed or Input.is_action_just_pressed("skill_r")
 
-## Kích hoạt Trạng Thái 2: Huyết Lam Cuồng Nộ (10s duy trì, Task 26.2)
+## Kích hoạt Trạng Thái 2: Huyết Lam Cuồng Nộ (10s duy trì, Task 26.2 & Task 27.2)
 func _activate_rage_state_2() -> void:
 	if _is_rage_state_2 or _cd_rage_r_timer > 0.0:
 		return
 	_is_rage_state_2 = true
 	_rage_active_timer = RAGE_ACTIVE_DURATION
 
+	# Task 27.2: Âm thanh gầm thức tỉnh Nộ + chuyển BGM sang nhịp dồn dập
+	KayKitAudioDirector.play_sfx("rage_r_awaken")
+	KayKitAudioDirector.set_rage_bgm_mode(true)
+
 	# Nổ lốc xoáy kép Đỏ - Xanh Dương dưới chân, đẩy lùi nhẹ và gây 15.0 DMG xung kích
 	KayKitVFXManager.spawn_rage_awakening_burst(get_tree(), global_position)
 	_apply_melee_hit_detection(15.0, 2.4, true)
 	_knockback_nearby_enemies(2.4, 7.5)
 
-	# Gắn hào quang duy trì quanh người suốt 10 giây
+	# Gắn hào quang duy trì quanh người suốt 10 giây (Task 27.1: 6 lớp Linh Giáp Cực Quang)
 	if _rage_aura_node != null and is_instance_valid(_rage_aura_node):
 		_rage_aura_node.queue_free()
 	_rage_aura_node = KayKitVFXManager.attach_persistent_rage_aura(self, visual_root)
 
-## Kết thúc Trạng Thái 2: Bắt đầu 6.0s hồi chiêu (Task 26.2)
+## Kết thúc Trạng Thái 2: Bắt đầu 6.0s hồi chiêu (Task 26.2 & Task 27.2)
 func _deactivate_rage_state_2() -> void:
 	_is_rage_state_2 = false
 	_rage_active_timer = 0.0
 	_cd_rage_r_timer = COOLDOWN_RAGE_R
+
+	# Task 27.2: Âm thanh hạ nhiệt Nộ + trả BGM về nhịp độ bình thường
+	KayKitAudioDirector.play_sfx("rage_r_expire")
+	KayKitAudioDirector.set_rage_bgm_mode(false)
+
 	if _rage_aura_node != null and is_instance_valid(_rage_aura_node):
 		_rage_aura_node.queue_free()
 		_rage_aura_node = null
@@ -311,6 +327,10 @@ func _ready() -> void:
 
 	# --- Play Idle ---
 	_play_anim(ANIM_IDLE)
+
+	# --- Task 27.2: Khởi tạo AudioDirector và BGM chiến trận ---
+	KayKitAudioDirector.ensure_initialized(get_tree())
+	KayKitAudioDirector.start_bgm()
 
 
 func _get_raw_physical_movement_input() -> Vector2:
@@ -647,10 +667,27 @@ func _physics_process(delta: float) -> void:
 				if visual_root:
 					visual_root.rotation.y = _facing_angle
 			_play_anim(ANIM_RUN)
+
+			# Task 27.2: Âm thanh bước chân trên đá
+			if is_on_floor():
+				_footstep_timer -= delta
+				if _footstep_timer <= 0.0:
+					_footstep_timer = 0.22 if _is_rage_state_2 else 0.26
+					KayKitAudioDirector.play_sfx("footstep_stone", -10.0)
+
+			# Task 27.1 Lớp 6: Tự động để lại tàn ảnh .glb Đỏ-Xanh khi chạy trong Nộ
+			if _is_rage_state_2 and is_on_floor() and visual_root:
+				_rage_afterimage_timer -= delta
+				if _rage_afterimage_timer <= 0.0:
+					_rage_afterimage_timer = 0.16
+					_rage_afterimage_toggle = not _rage_afterimage_toggle
+					var ghost_col := Color(1.0, 0.03, 0.14) if _rage_afterimage_toggle else Color(0.0, 0.40, 1.0)
+					KayKitVFXManager.spawn_prismatic_hero_afterimage(get_tree(), visual_root, ghost_col, 0.32)
 		else:
 			# Dừng ngay lập tức khi thả tay khỏi phím
 			velocity.x = 0.0
 			velocity.z = 0.0
+			_footstep_timer = 0.0
 			if is_on_floor():
 				_play_anim(ANIM_IDLE)
 
@@ -945,6 +982,24 @@ func _do_melee_combo(aim_override: Vector3 = Vector3.ZERO) -> void:
 	var slash_pos := global_position + Vector3(0.0, 0.95, 0.0)
 	KayKitVFXManager.spawn_combo_slash_vfx(current_step, slash_pos, _facing_angle, self, _is_rage_state_2)
 
+	# Task 27.2: Âm thanh chém U1, U2, U3 (Thường vs Nộ)
+	if _is_rage_state_2:
+		match current_step:
+			0:
+				KayKitAudioDirector.play_sfx("u1_rage")
+			1:
+				KayKitAudioDirector.play_sfx("u2_rage")
+			2:
+				KayKitAudioDirector.play_sfx("u3_rage_dragon_fall")
+	else:
+		match current_step:
+			0:
+				KayKitAudioDirector.play_sfx("u1_slash")
+			1:
+				KayKitAudioDirector.play_sfx("u2_slash")
+			2:
+				KayKitAudioDirector.play_sfx("u3_heaven_shatter")
+
 	_lunge_dir = locked_attack_dir
 	_lunge_timer = 0.14
 	_combo_index = (_combo_index + 1) % COMBO_SEQUENCE.size()
@@ -1025,8 +1080,20 @@ func _do_rmb_cross_cleave(aim_override: Vector3 = Vector3.ZERO) -> void:
 	# X-Slash VFX (Task 25.4 / 26.4)
 	KayKitVFXManager.spawn_rmb_solar_cross_cleave(get_tree(), global_position, locked_attack_dir, _is_rage_state_2)
 
+	# Task 27.2: Âm thanh chém chữ X RMB Pha 1 (Thường vs Nộ)
+	if _is_rage_state_2:
+		KayKitAudioDirector.play_sfx("i_rage_hexa_cleave")
+	else:
+		KayKitAudioDirector.play_sfx("i_phase1_x_cleave")
+
 
 func _trigger_rmb_phase_two(fwd_dir: Vector3) -> void:
+	# Task 27.2: Âm thanh phóng đại sóng kiếm RMB Pha 2 (Thường vs Nộ)
+	if _is_rage_state_2:
+		KayKitAudioDirector.play_sfx("i_rage_five_wing_wave")
+	else:
+		KayKitAudioDirector.play_sfx("i_phase2_wave_launch")
+
 	# Phase 2: Sóng Kiếm Khí (5 Cánh Ngũ Dực 6.2m 44.0 DMG nếu Nộ, 3 Cánh Tam Dực 4.8m 30.0 DMG nếu mặc định)
 	var dist := 6.2 if _is_rage_state_2 else 4.8
 	var dmg := 44.0 if _is_rage_state_2 else 30.0
@@ -1055,6 +1122,9 @@ func _do_spin_attack(aim_override: Vector3 = Vector3.ZERO) -> void:
 		return
 	_cd_q_timer = COOLDOWN_Q
 
+	# Task 27.2: Âm thanh lốc xoáy Q [O]
+	KayKitAudioDirector.play_sfx("o_whirlwind_spin")
+
 	var aim_dir := aim_override if aim_override.length_squared() > 0.001 else _get_stable_aim_direction()
 	_snap_to_aim_direction(aim_dir, 0.45)
 
@@ -1081,6 +1151,9 @@ func _do_ranged_throw(target_pos_override: Vector3 = Vector3.ZERO) -> void:
 	if _cd_e_timer > 0.0 or _is_throwing_e:
 		return
 	_cd_e_timer = COOLDOWN_E
+
+	# Task 27.2: Âm thanh ném bom E [P]
+	KayKitAudioDirector.play_sfx("p_bomb_throw")
 
 	var raw_cursor := target_pos_override if target_pos_override != Vector3.ZERO else _get_cursor_world_pos()
 	var aim_dir := _get_stable_aim_direction()
@@ -1111,6 +1184,10 @@ func _do_dodge() -> void:
 	if _cd_dash_timer > 0.0:
 		return
 	_cd_dash_timer = COOLDOWN_DASH
+
+	# Task 27.2: Âm thanh lướt né Space
+	KayKitAudioDirector.play_sfx("dash_space")
+
 	var dodge_dir := _get_movement_input_vector()
 	if dodge_dir.length_squared() < 0.01:
 		if visual_root:
@@ -1132,6 +1209,9 @@ func _do_dodge() -> void:
 
 
 func _do_jump() -> void:
+	# Task 27.2: Âm thanh nhảy C
+	KayKitAudioDirector.play_sfx("jump_c")
+
 	velocity.y = JUMP_VELOCITY
 	_jump_state = 1
 	_action_lock_timer = 0.1

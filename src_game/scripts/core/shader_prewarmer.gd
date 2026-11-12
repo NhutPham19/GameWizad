@@ -1,6 +1,8 @@
 class_name ShaderPrewarmer
 extends Node
 
+const KayKitAudioDirector = preload("res://scripts/audio/kaykit_audio_director.gd")
+
 # ==============================================================================
 # SHADER PREWARMER - VULKAN PSO PIPELINE CACHE ACCELERATOR (Directive 25)
 # 100% ZERO PRIMITIVE MESHES (Uses get_safe_particle_quad_mesh)
@@ -29,6 +31,8 @@ const KENNEY_TEXTURES_TO_PREWARM := [
 	"res://assets/vfx_textures/kenney_particles/circle_04.png",
 	"res://assets/vfx_textures/kenney_particles/scorch_02.png",
 	"res://assets/vfx_textures/kenney_particles/spark_05.png",
+	"res://assets/vfx_textures/flame_04.png",
+	"res://assets/vfx_textures/spark_06.png",
 ]
 
 static func prewarm(parent_node: Node) -> void:
@@ -46,6 +50,9 @@ func _ready() -> void:
 	KayKitVFXManager._get_rage_crimson_cobalt_ramp()
 	for tex_path in KENNEY_TEXTURES_TO_PREWARM:
 		KayKitVFXManager._load_cached_tex(tex_path)
+
+	# Pre-bake và khởi tạo Audio Pool vào RAM (Task 27.2)
+	KayKitAudioDirector.ensure_initialized(get_tree())
 
 	var vp = SubViewport.new()
 	vp.size = Vector2i(2, 2)

@@ -11,6 +11,7 @@ extends CharacterBody3D
 
 const KayKitAssetRegistry = preload("res://scripts/core/kaykit_asset_registry.gd")
 const KayKitAnimationBinder = preload("res://scripts/characters/kaykit_animation_binder.gd")
+const KayKitAudioDirector = preload("res://scripts/audio/kaykit_audio_director.gd")
 
 @export var max_hp: float = 80.0
 @export var move_speed: float = 4.2
@@ -704,6 +705,7 @@ func take_damage(amount: float, knockback_dir: Vector3 = Vector3.ZERO) -> void:
 
 	if hp <= 0.0:
 		is_dead = true
+		KayKitAudioDirector.play_sfx("enemy_death_burst", -2.0)
 		collision_layer = 0
 		collision_mask = 1
 		var holder = get_node_or_null("OverheadHPHolder")
@@ -718,6 +720,7 @@ func take_damage(amount: float, knockback_dir: Vector3 = Vector3.ZERO) -> void:
 		tw.tween_interval(1.8)
 		tw.tween_callback(queue_free)
 	else:
+		KayKitAudioDirector.play_sfx("hit_enemy_flesh_metal", -4.0)
 		_play_anim_safe("Hit_A")
 
 func _spawn_floating_damage_text(damage_amount: float, custom_color: Color = Color.TRANSPARENT) -> void:
