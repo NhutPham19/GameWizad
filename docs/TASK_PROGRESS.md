@@ -361,6 +361,38 @@
   - Xuất báo cáo tiến độ toàn diện `docs/BAO_CAO_TIEN_DO_DU_AN_GAMEWIZAD.md`.
   - Cập nhật Snapshot `docs/CURRENT_CODE_SNAPSHOT.md`, commit và push lên kho lưu trữ GitHub `https://github.com/NhutPham19/GameWizad` (`main`).
 
+---
+
+## 📌 GIAI ĐOẠN 25: ĐẠI TU HIỆU ỨNG THỊ GIÁC ĐA SẮC 5 TẦNG HDR (U3 & I) (CHỈ ĐẠO 25) (HOÀN THÀNH 100% ✅)
+
+- [x] **TASK 25.1: Nâng cấp Shader Cung Kiếm Đa Sắc 5 Tầng HDR (`vfx_stylized_slash.gdshader`)** (PASS)
+  - Hỗ trợ dải màu quang phổ 5 tầng: `core_color` (Trắng kim cương) -> `mid_color` (Vàng/Hồng/Lam) -> `edge_color` (Cam/Tím) -> `accent_color` (Neon cực quang) -> Fade out.
+  - Tích hợp tán sắc cầu vồng Prismatic Iridescence (`chromatic_shift`) và Sparkle Dissolve tinh thể tan biến mép vệt chém.
+  - Tương thích ngược 100% với các uniform cũ (`main_color`, `emission_boost`, `progress`, ...).
+- [x] **TASK 25.2: Bổ sung các hàm lõi Đa Sắc trong `KayKitVFXManager`** (PASS)
+  - Raycast bám dính địa hình đa tầng `_snap_vfx_to_ground(tree, pos)`.
+  - Vòng lụa kiếm khí 36 phân đoạn xoáy ngang mặt đất `_spawn_prismatic_cyclone_ring_ribbon()`.
+  - Hoa đăng tinh tú Kenney 2D/3D giao thoa `_spawn_kenney_star_flare_burst()` (`star_07.png` + `light_01.png`).
+  - Tàn ảnh mô hình KayKit `.glb` thật `spawn_prismatic_hero_afterimage()`.
+  - Nâng cấp chớp sáng trúng đòn `spawn_hit_sparks()` với 22 hạt tia lửa đa sắc kèm hoa đăng Kenney.
+- [x] **TASK 25.3: Đại tu Đòn thứ 3 nút [U] — "Thánh Long Thiên Giáng Trảm" (7 Lớp Đa Sắc & 35.0 DMG)** (PASS)
+  - Đòn U3 gây chính xác 35.0 DMG lên mục tiêu (nhịp 1 và 2 giữ 25.0 DMG).
+  - 7 lớp hiệu ứng thị giác đồng bộ: Tam trùng đại kiếm khí bổ dọc Vàng-Hồng-Lam, 2 vòng lụa xoáy ngược chiều sát đất, 2 cột lốc xoáy lụa bốc cao 3.2m, 2 decal trận pháp cổ ngữ Kenney kép, hoa đăng tinh tú tâm va chạm, đài phun 42 hạt cầu vồng và xung ánh sáng OmniLight3D đổi màu (shadow_enabled = false).
+- [x] **TASK 25.4: Đại tu Chiêu nút [I] — "Thánh Kiếm Phá Không Trảm: Cực Quang Thập Tự" (2 Pha, 8 Lớp & 55.0 DMG)** (PASS)
+  - Pha 1 (25.0 DMG): Lướt để lại 3 tàn ảnh `.glb` thật (Vàng `#FFD700` -> Hồng `#FF1A8C` -> Lam `#00F0FF`) + Tứ kiếm khí chữ X 4 góc + Hoa đăng tâm điểm + Decal `circle_04.png`.
+  - Pha 2 (30.0 DMG): Phóng Đại Sóng Kiếm Khí Tam Dực `RMBPrismaticTripleWave3D` 3 cánh lụa cong (Lưỡi trung tâm 82° + 2 Cánh phượng hoàng ±36°) càn quét mặt đất 4.8m vận tốc 18m/s bám sát địa hình.
+  - Cứ mỗi 0.95m bung nở vòng lụa xoáy và ấn chú Decal; bùng nổ Đại Tinh Vân (Supernova Flare) hoa đăng kép và giải phóng đài hạt ánh sáng cuối hành trình. Tổng sát thương trọn vẹn: 55.0 DMG.
+- [x] **TASK 25.5: Tiền nạp Shader an toàn trong `ShaderPrewarmer` (0% PrimitiveMesh) & Giữ vững 165Hz+** (PASS)
+  - Loại bỏ hoàn toàn `BoxMesh.new()`, thay bằng `get_safe_particle_quad_mesh()`.
+  - Tiền nạp sẵn `vfx_stylized_slash.gdshader`, `_get_prismatic_color_ramp()` và toàn bộ texture hạt Kenney.
+- [x] **TASK 25.6: Bộ Kiểm Thử Tự Động Test Phase 25 & Phase 24 Đạt 100% PASS (PRIMITIVE MESHES == 0)** (PASS)
+  - Chạy `test_phase_25_prismatic_vfx_overhaul.gd`: 4/4 TEST PASS 100% (U3 35 DMG, I 55 DMG, PrimitiveMesh == 0, Dash CD 1.0s).
+  - Chạy `test_phase_24_dash_cd_and_bulletproof_stairs.gd`: 3/3 TEST PASS 100% (Bảo toàn 100% vật lý cầu thang & khóa CD 1.0s).
+  - Chụp ảnh minh chứng GPU vật lý NVIDIA GeForce RTX 4060 Laptop GPU: `docs/QA_REPORTS/screenshots/phase25_1_u3_heaven_shatter_prismatic_vfx.png` và `phase25_2_i_prismatic_cross_and_triple_wave.png`.
+  - Xuất báo cáo nghiệm thu [PHASE_25_PRISMATIC_VFX_OVERHAUL_QA_REPORT.md](file:///e:/DoAnCaNhan/ThuVienGame/GameWizad/docs/QA_REPORTS/PHASE_25_PRISMATIC_VFX_OVERHAUL_QA_REPORT.md) và báo cáo tiến độ [BAO_CAO_TIEN_DO_DU_AN_GAMEWIZAD.md](file:///e:/DoAnCaNhan/ThuVienGame/GameWizad/docs/BAO_CAO_TIEN_DO_DU_AN_GAMEWIZAD.md).
+  - Commit và push sạch sẽ lên kho lưu trữ GitHub `https://github.com/NhutPham19/GameWizad` (`main`).
+
+
 
 
 
