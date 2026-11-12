@@ -46,10 +46,10 @@ func _build_ui() -> void:
 	overlay_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(overlay_root)
 
-	# --- 1. NÚT CHƠI LẠI TRÊN ĐỈNH MÀN HÌNH (Phím R) ---
+	# --- 1. NÚT CHƠI LẠI TRÊN ĐỈNH MÀN HÌNH (Phím F1 - Directive 26 Task 26.1) ---
 	var restart_btn := Button.new()
 	restart_btn.name = "RestartButton"
-	restart_btn.text = "🔄 CHƠI LẠI (Phím R)"
+	restart_btn.text = "🔄 CHƠI LẠI (Phím F1)"
 	restart_btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	restart_btn.anchor_left = 0.5
 	restart_btn.anchor_right = 0.5
@@ -164,7 +164,7 @@ func _build_ui() -> void:
 	l_vbox.add_child(hero_anim_label)
 
 	hero_skills_label = Label.new()
-	hero_skills_label.text = "Phím Kỹ Năng: [U] Liên Trảm | [I] Phá Không Trảm | [O] Xoay 360° | [P] Bom Lôi Vụ | [Space] Lướt | [C] Nhảy"
+	hero_skills_label.text = "Phím Kỹ Năng: [U] Liên Trảm | [I] Phá Không Trảm | [O] Xoay 360° | [P] Bom Lôi Vụ | [Space] Lướt | [R] Hóa Nộ (10s) | [F1] Chơi Lại | [C] Nhảy"
 	hero_skills_label.add_theme_font_size_override("font_size", 11)
 	hero_skills_label.add_theme_color_override("font_color", Color(0.75, 0.8, 0.85))
 	hero_skills_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -255,8 +255,8 @@ func _build_ui() -> void:
 	bottom_panel.anchor_right = 0.5
 	bottom_panel.anchor_top = 1.0
 	bottom_panel.anchor_bottom = 1.0
-	bottom_panel.offset_left = -440.0
-	bottom_panel.offset_right = 440.0
+	bottom_panel.offset_left = -550.0
+	bottom_panel.offset_right = 550.0
 	bottom_panel.offset_top = -62.0
 	bottom_panel.offset_bottom = -16.0
 
@@ -280,7 +280,7 @@ func _build_ui() -> void:
 
 	skill_cooldown_label = Label.new()
 	skill_cooldown_label.name = "SkillCooldownLabel"
-	skill_cooldown_label.text = "[U] Liên Trảm: SẴN SÀNG  |  [I] Phá Không: SẴN SÀNG  |  [O] Xoay 360°: SẴN SÀNG  |  [P] Bom Lôi Vụ: SẴN SÀNG  |  [Space] Lướt: SẴN SÀNG"
+	skill_cooldown_label.text = "[U] Liên Trảm: SẴN SÀNG  |  [I] Phá Không: SẴN SÀNG  |  [O] Xoay 360°: SẴN SÀNG  |  [P] Bom Lôi Vụ: SẴN SÀNG  |  [Space] Lướt: SẴN SÀNG  |  [R] Hóa Nộ: SẴN SÀNG"
 	skill_cooldown_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	skill_cooldown_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	skill_cooldown_label.add_theme_font_size_override("font_size", 13)
@@ -299,7 +299,7 @@ func _apply_mouse_filter_ignore(node: Node) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_R or event.physical_keycode == KEY_R:
+		if event.keycode == KEY_F1 or event.physical_keycode == KEY_F1:
 			get_tree().reload_current_scene()
 
 func _process(delta: float) -> void:
@@ -401,7 +401,13 @@ func _update_telemetry_display(delta: float) -> void:
 			if "_cd_dash_timer" in hero and hero._cd_dash_timer > 0.05:
 				dash_text = "CD: %.1fs" % hero._cd_dash_timer
 
-			skill_cooldown_label.text = "[U] Liên Trảm: SẴN SÀNG  |  [I] Phá Không: %s  |  [O] Xoay 360°: %s  |  [P] Bom Lôi Vụ: %s  |  [Space] Lướt: %s" % [rmb_text, q_text, e_text, dash_text]
+			var r_text := "[R] Hóa Nộ: SẴN SÀNG"
+			if "_is_rage_state_2" in hero and hero._is_rage_state_2:
+				r_text = "🔥 [R] HUYẾT LAM NỘ: %.1fs (ĐANG BẬT)" % hero._rage_active_timer
+			elif "_cd_rage_r_timer" in hero and hero._cd_rage_r_timer > 0.05:
+				r_text = "[R] Hóa Nộ: CD: %.1fs" % hero._cd_rage_r_timer
+
+			skill_cooldown_label.text = "[U] Liên Trảm: SẴN SÀNG  |  [I] Phá Không: %s  |  [O] Xoay 360°: %s  |  [P] Bom Lôi Vụ: %s  |  [Space] Lướt: %s  |  %s" % [rmb_text, q_text, e_text, dash_text, r_text]
 
 	# Enemies count
 	var enemies := get_tree().get_nodes_in_group("enemies")

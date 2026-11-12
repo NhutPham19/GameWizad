@@ -34,6 +34,12 @@ const COOLDOWN_E: float = 6.0
 const COOLDOWN_DASH: float = 1.0
 const MAX_E_THROW_RANGE: float = 7.5
 
+# --- Trạng Thái Thứ 2: Huyết Lam Cuồng Nộ [R] (Directive 26 Task 26.2) ---
+const RAGE_ACTIVE_DURATION: float = 10.0   # Duy trì trạng thái 2 trong đúng 10.0 giây
+const COOLDOWN_RAGE_R: float = 6.0         # Hồi chiêu 6.0 giây sau khi kết thúc 10s Nộ
+const RAGE_DAMAGE_MULTIPLIER: float = 1.45 # Tăng +45% sát thương toàn bộ đòn đánh & kỹ năng
+const RAGE_SPEED_MULTIPLIER: float = 1.15  # Tăng +15% tốc độ chạy và tốc độ vung kiếm
+
 # --- Animation Names (KayKit 75 anims) ---
 const ANIM_IDLE := "Idle"
 const ANIM_WALK := "Walking_A"
@@ -100,6 +106,13 @@ var _rmb_cleave_timer: float = 0.0
 var _rmb_cleave_dir: Vector3 = Vector3.ZERO
 var _rmb_wave_spawned: bool = false
 
+# --- Trạng Thái Thứ 2 (Task 26.2) ---
+var _is_rage_state_2: bool = false
+var _rage_active_timer: float = 0.0
+var _cd_rage_r_timer: float = 0.0
+var _prev_r_phys_down: bool = false
+var _rage_aura_node: Node3D = null
+
 # --- Stats ---
 var hp: float = 100.0
 var max_hp: float = 100.0
@@ -144,6 +157,46 @@ func _is_dash_just_pressed() -> bool:
 	_prev_space_phys_down = space_down
 	return space_just_pressed or Input.is_action_just_pressed("dash")
 
+## Đọc phím vật lý R kích hoạt Trạng Thái Thứ 2 (Huyết Lam Cuồng Nộ, Task 26.2)
+func _is_rage_key_just_pressed() -> bool:
+	var has_focus := true
+	var win := get_window()
+	if win and DisplayServer.get_name() != "headless":
+		has_focus = win.has_focus()
+	if not has_focus:
+		_prev_r_phys_down = false
+		return false
+	var r_down := Input.is_physical_key_pressed(KEY_R)
+	var r_just_pressed := r_down and not _prev_r_phys_down
+	_prev_r_phys_down = r_down
+	return r_just_pressed or Input.is_action_just_pressed("skill_r")
+
+## Kích hoạt Trạng Thái 2: Huyết Lam Cuồng Nộ (10s duy trì, Task 26.2)
+func _activate_rage_state_2() -> void:
+	if _is_rage_state_2 or _cd_rage_r_timer > 0.0:
+		return
+	_is_rage_state_2 = true
+	_rage_active_timer = RAGE_ACTIVE_DURATION
+
+	# Nổ lốc xoáy kép Đỏ - Xanh Dương dưới chân, đẩy lùi nhẹ và gây 15.0 DMG xung kích
+	KayKitVFXManager.spawn_rage_awakening_burst(get_tree(), global_position)
+	_apply_melee_hit_detection(15.0, 2.4, true)
+	_knockback_nearby_enemies(2.4, 7.5)
+
+	# Gắn hào quang duy trì quanh người suốt 10 giây
+	if _rage_aura_node != null and is_instance_valid(_rage_aura_node):
+		_rage_aura_node.queue_free()
+	_rage_aura_node = KayKitVFXManager.attach_persistent_rage_aura(self, visual_root)
+
+## Kết thúc Trạng Thái 2: Bắt đầu 6.0s hồi chiêu (Task 26.2)
+func _deactivate_rage_state_2() -> void:
+	_is_rage_state_2 = false
+	_rage_active_timer = 0.0
+	_cd_rage_r_timer = COOLDOWN_RAGE_R
+	if _rage_aura_node != null and is_instance_valid(_rage_aura_node):
+		_rage_aura_node.queue_free()
+		_rage_aura_node = null
+
 ## Khi bấm U / I / P trên bàn phím: Ưu tiên nhắm vào Bot gần nhất trong tầm đánh trước mặt, hoặc đánh theo hướng chạy WASD / hướng mặt hiện tại
 func _get_smart_keyboard_aim_direction(max_auto_aim_range: float = 4.2) -> Vector3:
 	var move_vec := _get_movement_input_vector()
@@ -173,12 +226,13 @@ func _ready() -> void:
 	collision_layer = 2
 	collision_mask = 1 | 4
 
-	# Task 23.4: Đăng ký thêm KEY_U, KEY_I, KEY_O, KEY_P vào InputMap cho các action tương ứng
+	# Task 23.4 & 26.2: Đăng ký thêm KEY_U, KEY_I, KEY_O, KEY_P, KEY_R vào InputMap cho các action tương ứng
 	var map_bindings := {
 		"skill_lmb": KEY_U,
 		"skill_rmb": KEY_I,
 		"skill_q": KEY_O,
-		"skill_e": KEY_P
+		"skill_e": KEY_P,
+		"skill_r": KEY_R
 	}
 	for act in map_bindings:
 		if not InputMap.has_action(act):
@@ -325,6 +379,18 @@ func _physics_process(delta: float) -> void:
 	_cd_e_timer = maxf(0.0, _cd_e_timer - delta)
 	_cd_dash_timer = maxf(0.0, _cd_dash_timer - delta)
 
+	# --- Trạng Thái Thứ 2: Huyết Lam Cuồng Nộ [R] (Directive 26 Task 26.2) ---
+	if _is_rage_state_2:
+		_rage_active_timer -= delta
+		if _rage_active_timer <= 0.0:
+			_deactivate_rage_state_2()
+	else:
+		_cd_rage_r_timer = maxf(0.0, _cd_rage_r_timer - delta)
+
+	if _is_rage_key_just_pressed():
+		if not _is_rage_state_2 and _cd_rage_r_timer <= 0.0:
+			_activate_rage_state_2()
+
 	# --- Combat Facing Lock (Task 21.5) ---
 	if _combat_facing_lock_timer > 0.0:
 		_combat_facing_lock_timer -= delta
@@ -441,10 +507,11 @@ func _physics_process(delta: float) -> void:
 							var pull_dir := diff_vec.normalized()
 							(pb as CharacterBody3D).global_position += pull_dir * minf(0.35 * delta * 7.5, d_len - 0.4)
 
+			var effective_run_speed := RUN_SPEED * (RAGE_SPEED_MULTIPLIER if _is_rage_state_2 else 1.0)
 			var spin_mv := _get_movement_input_vector()
 			if spin_mv.length_squared() > 0.01:
-				velocity.x = spin_mv.x * (RUN_SPEED * 0.80)
-				velocity.z = spin_mv.z * (RUN_SPEED * 0.80)
+				velocity.x = spin_mv.x * (effective_run_speed * 0.80)
+				velocity.z = spin_mv.z * (effective_run_speed * 0.80)
 				if visual_root:
 					if _combat_facing_lock_timer > 0.0:
 						visual_root.rotation.y = _facing_angle
@@ -468,10 +535,11 @@ func _physics_process(delta: float) -> void:
 			if anim_player:
 				anim_player.speed_scale = 1.0
 		else:
+			var effective_run_speed := RUN_SPEED * (RAGE_SPEED_MULTIPLIER if _is_rage_state_2 else 1.0)
 			var throw_mv := _get_movement_input_vector()
 			if throw_mv.length_squared() > 0.01:
-				velocity.x = throw_mv.x * RUN_SPEED
-				velocity.z = throw_mv.z * RUN_SPEED
+				velocity.x = throw_mv.x * effective_run_speed
+				velocity.z = throw_mv.z * effective_run_speed
 				if visual_root:
 					if _combat_facing_lock_timer > 0.0:
 						visual_root.rotation.y = _facing_angle
@@ -563,8 +631,9 @@ func _physics_process(delta: float) -> void:
 	# --- Di chuyển & Chạy Running_A (Dừng tức thì khi nhả phím) ---
 	if _action_lock_timer <= 0.0 and _jump_state == 0:
 		if input_dir.length_squared() > 0.01:
-			velocity.x = input_dir.x * RUN_SPEED
-			velocity.z = input_dir.z * RUN_SPEED
+			var effective_run_speed := RUN_SPEED * (RAGE_SPEED_MULTIPLIER if _is_rage_state_2 else 1.0)
+			velocity.x = input_dir.x * effective_run_speed
+			velocity.z = input_dir.z * effective_run_speed
 			if _combat_facing_lock_timer <= 0.0:
 				var target_yaw := atan2(input_dir.x, input_dir.z)
 				_facing_angle = lerp_angle(
@@ -868,21 +937,28 @@ func _do_melee_combo(aim_override: Vector3 = Vector3.ZERO) -> void:
 	var anim_name: String = COMBO_SEQUENCE[_combo_index]
 	_play_anim(anim_name)
 	if anim_player:
-		anim_player.speed_scale = 1.45
+		anim_player.speed_scale = 1.45 * (RAGE_SPEED_MULTIPLIER if _is_rage_state_2 else 1.0)
 
 	_action_lock_timer = 0.24
 	_start_sword_trail()
 
 	var slash_pos := global_position + Vector3(0.0, 0.95, 0.0)
-	KayKitVFXManager.spawn_combo_slash_vfx(current_step, slash_pos, _facing_angle)
+	KayKitVFXManager.spawn_combo_slash_vfx(current_step, slash_pos, _facing_angle, self, _is_rage_state_2)
 
 	_lunge_dir = locked_attack_dir
 	_lunge_timer = 0.14
 	_combo_index = (_combo_index + 1) % COMBO_SEQUENCE.size()
 	_combo_timer = COMBO_WINDOW + 0.24
 
-	var dmg := 35.0 if current_step == 2 else MELEE_DAMAGE
-	_apply_melee_hit_detection(dmg, MELEE_RANGE if current_step < 2 else 3.2, false)
+	var dmg := 0.0
+	var hit_rng := 0.0
+	if _is_rage_state_2:
+		dmg = 52.0 if current_step == 2 else 36.0
+		hit_rng = 3.4 if current_step == 2 else 2.75
+	else:
+		dmg = 35.0 if current_step == 2 else MELEE_DAMAGE
+		hit_rng = 3.2 if current_step == 2 else MELEE_RANGE
+	_apply_melee_hit_detection(dmg, hit_rng, false)
 
 
 func _do_rmb_cross_cleave(aim_override: Vector3 = Vector3.ZERO) -> void:
@@ -896,7 +972,7 @@ func _do_rmb_cross_cleave(aim_override: Vector3 = Vector3.ZERO) -> void:
 
 	_play_anim(ANIM_ATTACK_SLICE_H)
 	if anim_player:
-		anim_player.speed_scale = 1.6
+		anim_player.speed_scale = 1.6 * (RAGE_SPEED_MULTIPLIER if _is_rage_state_2 else 1.0)
 
 	_start_sword_trail()
 	_sword_trail_timer = 0.4
@@ -906,43 +982,68 @@ func _do_rmb_cross_cleave(aim_override: Vector3 = Vector3.ZERO) -> void:
 	_rmb_wave_spawned = false
 	_action_lock_timer = 0.32
 
-	# Sinh 3 Tàn Ảnh Mô Hình KayKit Thật dọc theo bước lướt (Task 25.4)
 	if visual_root:
-		KayKitVFXManager.spawn_prismatic_hero_afterimage(get_tree(), visual_root, Color(1.0, 0.84, 0.0), 0.28) # Vàng Hoàng Kim (#FFD700)
-		var tw_ghost := create_tween()
-		tw_ghost.tween_interval(0.04)
-		tw_ghost.tween_callback(func():
-			if is_instance_valid(visual_root):
-				KayKitVFXManager.spawn_prismatic_hero_afterimage(get_tree(), visual_root, Color(1.0, 0.10, 0.55), 0.28) # Hồng Cực Quang (#FF1A8C)
-		)
-		tw_ghost.tween_interval(0.05)
-		tw_ghost.tween_callback(func():
-			if is_instance_valid(visual_root):
-				KayKitVFXManager.spawn_prismatic_hero_afterimage(get_tree(), visual_root, Color(0.0, 0.94, 1.0), 0.28) # Lam Điện Quang (#00F0FF)
-		)
+		if _is_rage_state_2:
+			# Sinh 4 Tàn Ảnh KayKit Thật Xen Kẽ Đỏ - Xanh Dương (Task 26.4 Pha 1)
+			KayKitVFXManager.spawn_prismatic_hero_afterimage(get_tree(), visual_root, Color(1.0, 0.03, 0.14), 0.42) # Đỏ Huyết (#FF0824)
+			var tw_ghost := create_tween()
+			tw_ghost.tween_interval(0.035)
+			tw_ghost.tween_callback(func():
+				if is_instance_valid(visual_root):
+					KayKitVFXManager.spawn_prismatic_hero_afterimage(get_tree(), visual_root, Color(0.0, 0.40, 1.0), 0.42) # Xanh Dương (#0066FF)
+			)
+			tw_ghost.tween_interval(0.035)
+			tw_ghost.tween_callback(func():
+				if is_instance_valid(visual_root):
+					KayKitVFXManager.spawn_prismatic_hero_afterimage(get_tree(), visual_root, Color(1.0, 0.03, 0.14), 0.42) # Đỏ Huyết (#FF0824)
+			)
+			tw_ghost.tween_interval(0.035)
+			tw_ghost.tween_callback(func():
+				if is_instance_valid(visual_root):
+					KayKitVFXManager.spawn_prismatic_hero_afterimage(get_tree(), visual_root, Color(0.0, 0.40, 1.0), 0.42) # Xanh Dương (#0066FF)
+			)
+		else:
+			# Sinh 3 Tàn Ảnh Mô Hình KayKit Thật dọc theo bước lướt (Task 25.4)
+			KayKitVFXManager.spawn_prismatic_hero_afterimage(get_tree(), visual_root, Color(1.0, 0.84, 0.0), 0.28) # Vàng Hoàng Kim (#FFD700)
+			var tw_ghost := create_tween()
+			tw_ghost.tween_interval(0.04)
+			tw_ghost.tween_callback(func():
+				if is_instance_valid(visual_root):
+					KayKitVFXManager.spawn_prismatic_hero_afterimage(get_tree(), visual_root, Color(1.0, 0.10, 0.55), 0.28) # Hồng Cực Quang (#FF1A8C)
+			)
+			tw_ghost.tween_interval(0.05)
+			tw_ghost.tween_callback(func():
+				if is_instance_valid(visual_root):
+					KayKitVFXManager.spawn_prismatic_hero_afterimage(get_tree(), visual_root, Color(0.0, 0.94, 1.0), 0.28) # Lam Điện Quang (#00F0FF)
+			)
 
-	# Phase 1: 25.0 DMG trong quạt 3.5m trước mặt
-	_apply_melee_hit_detection(25.0, 3.5, false)
+	# Phase 1: 36.0 DMG (tầm 4.3m) nếu Nộ, 25.0 DMG (tầm 3.5m) nếu mặc định
+	var phase1_dmg := 36.0 if _is_rage_state_2 else 25.0
+	var phase1_rng := 4.3 if _is_rage_state_2 else 3.5
+	_apply_melee_hit_detection(phase1_dmg, phase1_rng, false)
 
-	# 4-layer X-Slash VFX (Task 25.4)
-	KayKitVFXManager.spawn_rmb_solar_cross_cleave(get_tree(), global_position, locked_attack_dir)
+	# X-Slash VFX (Task 25.4 / 26.4)
+	KayKitVFXManager.spawn_rmb_solar_cross_cleave(get_tree(), global_position, locked_attack_dir, _is_rage_state_2)
 
 
 func _trigger_rmb_phase_two(fwd_dir: Vector3) -> void:
-	# Phase 2: Đại Sóng Kiếm Khí Tam Dực Càn Quét 4.8m Mặt Đất (Directive 25 Task 25.4)
+	# Phase 2: Sóng Kiếm Khí (5 Cánh Ngũ Dực 6.2m 44.0 DMG nếu Nộ, 3 Cánh Tam Dực 4.8m 30.0 DMG nếu mặc định)
+	var dist := 6.2 if _is_rage_state_2 else 4.8
+	var dmg := 44.0 if _is_rage_state_2 else 30.0
 	KayKitVFXManager.spawn_rmb_traveling_crescent_wave(
 		get_tree(),
 		global_position,
 		fwd_dir,
-		4.8,
+		dist,
 		18.0,
-		30.0
+		dmg,
+		_is_rage_state_2
 	)
 	var cam := get_viewport().get_camera_3d()
 	if cam != null and cam.has_method("add_screen_shake"):
-		cam.add_screen_shake(0.12)
+		cam.add_screen_shake(0.16 if _is_rage_state_2 else 0.12)
 	elif cam != null and cam.has_method("add_shake"):
-		cam.add_shake(0.12)
+		cam.add_shake(0.16 if _is_rage_state_2 else 0.12)
 
 
 func _do_block_counter() -> void:
@@ -959,7 +1060,7 @@ func _do_spin_attack(aim_override: Vector3 = Vector3.ZERO) -> void:
 
 	_play_anim(ANIM_SPIN)
 	if anim_player:
-		anim_player.speed_scale = 1.55
+		anim_player.speed_scale = 1.55 * (RAGE_SPEED_MULTIPLIER if _is_rage_state_2 else 1.0)
 	_is_spinning_q = true
 	_spin_timer = 0.45
 	_action_lock_timer = 0.45
@@ -967,11 +1068,13 @@ func _do_spin_attack(aim_override: Vector3 = Vector3.ZERO) -> void:
 	_start_sword_trail()
 	_sword_trail_timer = 0.6
 
-	# Song Long Lốc Xoáy 360 độ (Directive 20 Task 20.4 Chiêu Q)
-	KayKitVFXManager.spawn_whirlwind_360_vfx(self)
+	# Song Long Lốc Xoáy 360 độ (Directive 20 Task 20.4 & Directive 26)
+	KayKitVFXManager.spawn_whirlwind_360_vfx(self, _is_rage_state_2)
 
-	# Sát thương diện rộng 360 độ
-	_apply_melee_hit_detection(SPIN_DAMAGE, SPIN_RANGE, true)
+	# Sát thương diện rộng 360 độ (26.0 DMG tầm 4.3m nếu Nộ, 35.0 DMG tầm 3.5m mặc định)
+	var spin_dmg := 26.0 if _is_rage_state_2 else SPIN_DAMAGE
+	var spin_rng := 4.3 if _is_rage_state_2 else SPIN_RANGE
+	_apply_melee_hit_detection(spin_dmg, spin_rng, true)
 
 
 func _do_ranged_throw(target_pos_override: Vector3 = Vector3.ZERO) -> void:
@@ -990,7 +1093,7 @@ func _do_ranged_throw(target_pos_override: Vector3 = Vector3.ZERO) -> void:
 
 	_play_anim(ANIM_THROW)
 	if anim_player:
-		anim_player.speed_scale = 1.75
+		anim_player.speed_scale = 1.75 * (RAGE_SPEED_MULTIPLIER if _is_rage_state_2 else 1.0)
 	_is_throwing_e = true
 	_throw_timer = 0.18
 	_action_lock_timer = 0.18
@@ -998,9 +1101,9 @@ func _do_ranged_throw(target_pos_override: Vector3 = Vector3.ZERO) -> void:
 	var target_pos := _compute_clamped_bomb_target(raw_cursor)
 	var start_pos := global_position + Vector3(0.0, 1.2, 0.0)
 
-	# Ám Ảnh Lôi Vụ 4 tầng & Vùng Khói Lôi Vụ Hazard Zone (Task 21.1)
+	# Ám Ảnh Lôi Vụ 4 tầng & Vùng Khói Lôi Vụ Hazard Zone (Task 21.1 & Task 26.2 Bom Huyết Lôi)
 	KayKitVFXManager.spawn_smoke_bomb_hazard_zone(
-		get_tree().current_scene, start_pos, target_pos
+		get_tree().current_scene, start_pos, target_pos, _is_rage_state_2
 	)
 
 

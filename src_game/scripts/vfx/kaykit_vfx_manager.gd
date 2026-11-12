@@ -41,6 +41,7 @@ const TEX_LIGHT_02 := "res://assets/vfx_textures/light_02.png"
 static var _cached_slash_shader: Shader = null
 static var _tex_cache: Dictionary = {}
 static var _cached_prismatic_ramp: GradientTexture1D = null
+static var _cached_rage_red_blue_ramp: GradientTexture1D = null
 
 static func _get_root_parent(parent_node: Node = null) -> Node:
 	if is_instance_valid(parent_node):
@@ -111,6 +112,74 @@ static func _get_prismatic_color_ramp() -> GradientTexture1D:
 	tex.width = 128
 	_cached_prismatic_ramp = tex
 	return _cached_prismatic_ramp
+
+## Bảng màu Hạt Nộ Đỏ Huyết & Xanh Dương Điện Quang (Directive 26 Task 26.4)
+static func _get_rage_crimson_cobalt_ramp() -> GradientTexture1D:
+	if _cached_rage_red_blue_ramp != null:
+		return _cached_rage_red_blue_ramp
+	var grad := Gradient.new()
+	grad.offsets = PackedFloat32Array([0.0, 0.22, 0.52, 0.82, 1.0])
+	grad.colors = PackedColorArray([
+		Color(1.0, 0.96, 0.92, 1.0),  # Trắng Nóng
+		Color(1.0, 0.06, 0.14, 1.0),  # Đỏ Huyết Ngục (#FF0F24)
+		Color(0.85, 0.0, 0.18, 0.95), # Đỏ Thẫm
+		Color(0.0, 0.45, 1.0, 0.90),  # Xanh Dương Điện Quang (#0073FF)
+		Color(0.0, 0.85, 1.0, 0.0)    # Lam Băng tan biến
+	])
+	var tex := GradientTexture1D.new()
+	tex.gradient = grad
+	tex.width = 128
+	_cached_rage_red_blue_ramp = tex
+	return _cached_rage_red_blue_ramp
+
+## Diễn hoạt "Đọng Lại, Kéo Dài & Phình To Uy Lực" (Directive 26 Task 26.4 Lớp Dùng Chung)
+static func _animate_lingering_power_slash(
+	pivot: Node3D,
+	mesh_inst: MeshInstance3D,
+	smat: ShaderMaterial,
+	start_yaw_deg: float,
+	end_yaw_deg: float,
+	total_duration: float,
+	expand_scale: float = 1.25,
+	forward_push: Vector3 = Vector3.ZERO
+) -> void:
+	var strike_time := total_duration * 0.24
+	var linger_time := total_duration * 0.46
+	var decay_time := total_duration * 0.30
+
+	mesh_inst.rotation.y = deg_to_rad(start_yaw_deg)
+	pivot.scale = Vector3.ONE * 0.92
+	var start_pos := pivot.global_position
+
+	var tw := pivot.create_tween()
+	# Pha 1 (24% thời gian): Quét kiếm cực nhanh tới góc đích + bung kích thước chuẩn 1.06x
+	tw.set_parallel(true)
+	tw.tween_property(mesh_inst, "rotation:y", deg_to_rad(end_yaw_deg * 0.88), strike_time).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+	tw.tween_property(pivot, "scale", Vector3.ONE * 1.06, strike_time).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_method(func(v: float):
+		if is_instance_valid(smat):
+			smat.set_shader_parameter("slash_progress", v)
+	, 0.0, 0.14, strike_time)
+
+	# Pha 2 (46% thời gian - ĐỌNG LẠI & TO RA): Lưỡi kiếm ghim lại trong không trung, phình to lên expand_scale và nhích nhẹ về trước
+	tw.chain().set_parallel(true)
+	tw.tween_property(mesh_inst, "rotation:y", deg_to_rad(end_yaw_deg), linger_time).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tw.tween_property(pivot, "scale", Vector3(expand_scale, expand_scale * 1.08, expand_scale), linger_time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	if forward_push.length_squared() > 0.001:
+		tw.tween_property(pivot, "global_position", start_pos + forward_push, linger_time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_method(func(v: float):
+		if is_instance_valid(smat):
+			smat.set_shader_parameter("slash_progress", v)
+	, 0.14, 0.36, linger_time)
+
+	# Pha 3 (30% thời gian): Tan biến thành tàn lửa và tia điện
+	tw.chain().set_parallel(true)
+	tw.tween_property(pivot, "scale", Vector3(expand_scale * 1.08, expand_scale * 0.85, expand_scale * 1.08), decay_time)
+	tw.tween_method(func(v: float):
+		if is_instance_valid(smat):
+			smat.set_shader_parameter("slash_progress", v)
+	, 0.36, 1.0, decay_time)
+	tw.chain().tween_callback(pivot.queue_free)
 
 # ==============================================================================
 # 0. LÕI HÌNH HỌC AN TOÀN (ZERO PRIMITIVE MESHES)
@@ -366,6 +435,223 @@ static func _collect_real_glb_meshes(node: Node, out_list: Array[MeshInstance3D]
 	for child in node.get_children():
 		_collect_real_glb_meshes(child, out_list)
 
+## Kích hoạt Trạng Thái 2: Vụ nổ Lốc Xoáy Kép Đỏ - Xanh Dương thức tỉnh Nộ (Task 26.2 & 26.4)
+static func spawn_rage_awakening_burst(tree: SceneTree, origin: Vector3) -> void:
+	if tree == null:
+		tree = Engine.get_main_loop() as SceneTree
+	var scene_parent: Node = tree.current_scene if (tree and tree.current_scene) else (tree.root if tree else null)
+	if scene_parent == null:
+		return
+	var ground_pos := _snap_vfx_to_ground(tree, origin)
+
+	# 2 vòng lụa xoáy ngược chiều sát mặt đất: Vòng trong R=2.6m Đỏ Huyết, Vòng ngoài R=3.5m Xanh Dương
+	_spawn_prismatic_cyclone_ring_ribbon(
+		tree, ground_pos + Vector3(0.0, 0.04, 0.0), 0.6, 2.6, 0.65,
+		Color(1.0, 1.0, 1.0, 1.0), Color(1.0, 0.06, 0.14, 1.0), Color(0.85, 0.0, 0.18, 1.0), Color(1.0, 0.4, 0.0, 1.0),
+		16.0, 0.55, "RageAwakeningRingInner"
+	)
+	_spawn_prismatic_cyclone_ring_ribbon(
+		tree, ground_pos + Vector3(0.0, 0.06, 0.0), 1.2, 3.5, 0.72,
+		Color(1.0, 1.0, 1.0, 1.0), Color(0.0, 0.45, 1.0, 1.0), Color(0.0, 0.15, 0.85, 1.0), Color(0.0, 0.9, 1.0, 1.0),
+		-15.0, 0.55, "RageAwakeningRingOuter"
+	)
+
+	# 2 Cột lụa xoắn ốc (1 Đỏ, 1 Xanh Dương) vọt cao 3.8m
+	for h_idx in range(2):
+		var pillar_pivot := Node3D.new()
+		pillar_pivot.name = "RageAwakeningPillar_%s" % ("Red" if h_idx == 0 else "Blue")
+		scene_parent.add_child(pillar_pivot)
+		pillar_pivot.global_position = ground_pos + Vector3(0.0, 0.25 + h_idx * 0.45, 0.0)
+		pillar_pivot.rotation.z = deg_to_rad(22.0 if h_idx == 0 else -22.0)
+
+		var p_mesh := MeshInstance3D.new()
+		p_mesh.mesh = build_curved_slash_arc_mesh(1.15, 0.72, 260.0, 36)
+		p_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var p_mat := ShaderMaterial.new()
+		p_mat.shader = _get_stylized_slash_shader()
+		p_mat.set_shader_parameter("core_color", Color(1.0, 1.0, 1.0, 1.0))
+		p_mat.set_shader_parameter("mid_color", Color(1.0, 0.06, 0.14, 1.0) if h_idx == 0 else Color(0.0, 0.45, 1.0, 1.0))
+		p_mat.set_shader_parameter("edge_color", Color(0.85, 0.0, 0.18, 1.0) if h_idx == 0 else Color(0.0, 0.15, 0.85, 1.0))
+		p_mat.set_shader_parameter("accent_color", Color(1.0, 0.4, 0.0, 1.0) if h_idx == 0 else Color(0.0, 0.9, 1.0, 1.0))
+		p_mat.set_shader_parameter("emission_strength", 8.5)
+		p_mat.set_shader_parameter("core_sharpness", 2.2)
+		p_mesh.material_override = p_mat
+		pillar_pivot.add_child(p_mesh)
+
+		var p_tw := pillar_pivot.create_tween()
+		p_tw.set_parallel(true)
+		p_tw.tween_property(pillar_pivot, "global_position:y", ground_pos.y + 3.8, 0.52).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		p_tw.tween_property(pillar_pivot, "rotation:y", (1.0 if h_idx == 0 else -1.0) * TAU * 1.5, 0.52)
+		p_tw.tween_property(pillar_pivot, "scale", Vector3(1.9, 1.6, 1.9), 0.52)
+		p_tw.tween_method(func(val: float):
+			if is_instance_valid(p_mat):
+				p_mat.set_shader_parameter("slash_progress", val)
+		, 0.0, 1.0, 0.52)
+		p_tw.chain().tween_callback(pillar_pivot.queue_free)
+
+	# Hoa đăng Kenney Đỏ - Xanh
+	_spawn_kenney_star_flare_burst(
+		tree, ground_pos + Vector3(0.0, 1.2, 0.0), 3.8,
+		Color(1.0, 0.15, 0.25, 1.0), Color(0.1, 0.5, 1.0, 1.0), 0.45
+	)
+
+	# Xung ánh sáng OmniLight3D
+	var light := OmniLight3D.new()
+	light.name = "RageAwakeningLight"
+	light.shadow_enabled = false
+	light.omni_range = 6.5
+	light.light_color = Color(1.0, 0.25, 0.45)
+	light.light_energy = 6.0
+	scene_parent.add_child(light)
+	light.global_position = ground_pos + Vector3(0.0, 1.2, 0.0)
+	var ltw := light.create_tween()
+	ltw.tween_property(light, "light_energy", 0.0, 0.48).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	ltw.tween_callback(light.queue_free)
+
+## Gắn Hào Quang Nộ Đỏ - Xanh Dương Duy Trì Suốt 10 Giây (Task 26.2 & 26.4)
+## Trả về Node3D mang tên "RageState2AuraHolder" gắn làm con của hero_node
+static func attach_persistent_rage_aura(hero_node: Node3D, _visual_root: Node3D = null) -> Node3D:
+	if not is_instance_valid(hero_node):
+		return null
+
+	var aura_holder := Node3D.new()
+	aura_holder.name = "RageState2AuraHolder"
+	hero_node.add_child(aura_holder)
+	aura_holder.position = Vector3.ZERO
+
+	# 1. Dưới chân (Y = 0.06m): 2 mặt phẳng get_safe_particle_quad_mesh xoay ngược chiều liên tục
+	var floor_pivot := Node3D.new()
+	floor_pivot.name = "FloorRageAuraPivot"
+	floor_pivot.position = Vector3(0.0, 0.06, 0.0)
+	aura_holder.add_child(floor_pivot)
+
+	# Lớp 1 (circle_04.png): Đỏ Huyết (#FF0A24), emission = 4.5
+	var q1 := MeshInstance3D.new()
+	q1.name = "FloorAuraRed"
+	q1.mesh = get_safe_particle_quad_mesh(Vector2(2.35, 2.35))
+	q1.rotation.x = -PI * 0.5
+	q1.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var m1 := StandardMaterial3D.new()
+	m1.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m1.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m1.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m1.albedo_color = Color(1.0, 0.04, 0.14, 0.85)
+	var tex_c4 := _load_cached_tex("res://assets/vfx_textures/kenney_particles/circle_04.png")
+	if tex_c4:
+		m1.albedo_texture = tex_c4
+	m1.emission_enabled = true
+	m1.emission = Color(1.0, 0.04, 0.14)
+	m1.emission_energy_multiplier = 4.5
+	q1.material_override = m1
+	floor_pivot.add_child(q1)
+
+	# Lớp 2 (circle_02.png): Xanh Dương (#0066FF), emission = 4.5, rộng 2.75m
+	var q2 := MeshInstance3D.new()
+	q2.name = "FloorAuraBlue"
+	q2.mesh = get_safe_particle_quad_mesh(Vector2(2.75, 2.75))
+	q2.rotation.x = -PI * 0.5
+	q2.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var m2 := StandardMaterial3D.new()
+	m2.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m2.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m2.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m2.albedo_color = Color(0.0, 0.40, 1.0, 0.75)
+	var tex_c2 := _load_cached_tex("res://assets/vfx_textures/kenney_particles/circle_02.png")
+	if tex_c2:
+		m2.albedo_texture = tex_c2
+	m2.emission_enabled = true
+	m2.emission = Color(0.0, 0.40, 1.0)
+	m2.emission_energy_multiplier = 4.5
+	q2.material_override = m2
+	floor_pivot.add_child(q2)
+
+	# 2. Quanh thân (Y = 0.85m): 2 dải lụa kiếm khí nhỏ xoay tròn ngược chiều
+	var torso_pivot := Node3D.new()
+	torso_pivot.name = "TorsoRageOrbitPivot"
+	torso_pivot.position = Vector3(0.0, 0.85, 0.0)
+	aura_holder.add_child(torso_pivot)
+
+	var arc_red := MeshInstance3D.new()
+	arc_red.name = "TorsoArcRed"
+	arc_red.mesh = build_curved_slash_arc_mesh(0.95, 0.28, 210.0, 28)
+	arc_red.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var smat_red := ShaderMaterial.new()
+	smat_red.shader = _get_stylized_slash_shader()
+	smat_red.set_shader_parameter("core_color", Color(1.0, 1.0, 1.0, 1.0))
+	smat_red.set_shader_parameter("mid_color", Color(1.0, 0.06, 0.14, 1.0))
+	smat_red.set_shader_parameter("edge_color", Color(0.85, 0.0, 0.15, 1.0))
+	smat_red.set_shader_parameter("accent_color", Color(1.0, 0.4, 0.0, 1.0))
+	smat_red.set_shader_parameter("emission_strength", 6.5)
+	smat_red.set_shader_parameter("core_sharpness", 2.2)
+	smat_red.set_shader_parameter("slash_progress", 0.15)
+	arc_red.material_override = smat_red
+	arc_red.rotation.x = deg_to_rad(15.0)
+	torso_pivot.add_child(arc_red)
+
+	var arc_blue := MeshInstance3D.new()
+	arc_blue.name = "TorsoArcBlue"
+	arc_blue.mesh = build_curved_slash_arc_mesh(1.10, 0.28, 210.0, 28)
+	arc_blue.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var smat_blue := ShaderMaterial.new()
+	smat_blue.shader = _get_stylized_slash_shader()
+	smat_blue.set_shader_parameter("core_color", Color(1.0, 1.0, 1.0, 1.0))
+	smat_blue.set_shader_parameter("mid_color", Color(0.0, 0.45, 1.0, 1.0))
+	smat_blue.set_shader_parameter("edge_color", Color(0.0, 0.15, 0.85, 1.0))
+	smat_blue.set_shader_parameter("accent_color", Color(0.0, 0.9, 1.0, 1.0))
+	smat_blue.set_shader_parameter("emission_strength", 6.5)
+	smat_blue.set_shader_parameter("core_sharpness", 2.2)
+	smat_blue.set_shader_parameter("slash_progress", 0.15)
+	arc_blue.material_override = smat_blue
+	arc_blue.rotation.x = deg_to_rad(-15.0)
+	torso_pivot.add_child(arc_blue)
+
+	# 3. 18 hạt tia lửa Đỏ - Xanh bay lên liên tục
+	var particles := GPUParticles3D.new()
+	particles.name = "RageAuraParticles"
+	particles.amount = 18
+	particles.lifetime = 0.55
+	particles.draw_pass_1 = get_safe_particle_quad_mesh(Vector2(0.24, 0.24))
+
+	var pmat := ParticleProcessMaterial.new()
+	pmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
+	pmat.emission_ring_radius = 0.85
+	pmat.emission_ring_inner_radius = 0.25
+	pmat.direction = Vector3(0.0, 1.0, 0.0)
+	pmat.spread = 20.0
+	pmat.initial_velocity_min = 1.8
+	pmat.initial_velocity_max = 3.6
+	pmat.gravity = Vector3(0.0, 1.2, 0.0)
+	pmat.scale_min = 0.65
+	pmat.scale_max = 1.25
+	pmat.color_ramp = _get_rage_crimson_cobalt_ramp()
+	particles.process_material = pmat
+
+	var p_mat := StandardMaterial3D.new()
+	p_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	p_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	p_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	p_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	p_mat.vertex_color_use_as_albedo = true
+	var ptex := _load_cached_tex("res://assets/vfx_textures/kenney_particles/spark_05.png")
+	if ptex:
+		p_mat.albedo_texture = ptex
+	p_mat.emission_enabled = true
+	p_mat.emission = Color(1.0, 0.5, 0.5)
+	p_mat.emission_energy_multiplier = 4.0
+	particles.material_override = p_mat
+	particles.position = Vector3(0.0, 0.2, 0.0)
+	aura_holder.add_child(particles)
+
+	# Tween quay vô tận cho floor và torso pivots
+	var tw := aura_holder.create_tween().set_loops()
+	tw.set_parallel(true)
+	tw.tween_property(q1, "rotation:z", TAU, 3.2).as_relative()
+	tw.tween_property(q2, "rotation:z", -TAU, 2.8).as_relative()
+	tw.tween_property(arc_red, "rotation:y", TAU, 1.6).as_relative()
+	tw.tween_property(arc_blue, "rotation:y", -TAU, 1.4).as_relative()
+
+	return aura_holder
+
 ## Hiệu ứng trúng đòn Đa Sắc (Directive 25 Task 25.5)
 static func spawn_hit_sparks(tree: SceneTree, hit_pos: Vector3, hit_dir: Vector3 = Vector3.UP) -> void:
 	if tree == null:
@@ -561,13 +847,80 @@ static func _spawn_slash_sparks_burst(parent_node: Node3D, col_a: Color, col_b: 
 # 2. TOÀN BỘ 6 CHIÊU THỨC HERO KNIGHT 3D (Task 20.4)
 # ==============================================================================
 
-## Chiêu 1: Đánh thường LMB Combo 3 Nhịp Biến Hóa (Directive 25 Task 25.3)
+## Chiêu 1: Đánh thường LMB / [U] Combo 3 Nhịp Biến Hóa (Directive 25 & Directive 26)
 static func spawn_combo_slash_vfx(
 	combo_step: int,
 	origin: Vector3,
 	yaw: float,
-	parent_node: Node = null
+	parent_node: Node = null,
+	is_rage: bool = false
 ) -> void:
+	if is_rage:
+		var tree_inst := Engine.get_main_loop() as SceneTree
+		var scene_parent: Node = tree_inst.current_scene if (tree_inst and tree_inst.current_scene) else (tree_inst.root if tree_inst else null)
+		if scene_parent == null:
+			return
+		var flat_fwd := Vector3(sin(yaw), 0.0, cos(yaw)).normalized()
+
+		if combo_step == 0 or combo_step == 1:
+			var tilt_base := 6.0 if combo_step == 0 else -30.0
+			var slash_sign := 1.0 if combo_step == 0 else -1.0
+
+			# Lưỡi Tầng Trong: Đỏ Huyết Ngục (R = 2.15m, W = 0.82m)
+			var p_red := Node3D.new()
+			p_red.name = "U%dRageDualSlashRed" % (combo_step + 1)
+			scene_parent.add_child(p_red)
+			p_red.global_position = origin
+			p_red.rotation = Vector3(0.0, yaw, deg_to_rad(tilt_base))
+
+			var m_red := MeshInstance3D.new()
+			m_red.mesh = build_curved_slash_arc_mesh(2.15, 0.82, 160.0, 36)
+			m_red.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var smat_red := ShaderMaterial.new()
+			smat_red.shader = _get_stylized_slash_shader()
+			smat_red.set_shader_parameter("core_color", Color(1.0, 1.0, 1.0, 1.0))
+			smat_red.set_shader_parameter("mid_color", Color(1.0, 0.03, 0.14, 1.0)) # #FF0824
+			smat_red.set_shader_parameter("edge_color", Color(0.72, 0.0, 0.07, 1.0)) # #B80012
+			smat_red.set_shader_parameter("accent_color", Color(1.0, 0.33, 0.0, 1.0)) # #FF5500
+			smat_red.set_shader_parameter("emission_strength", 6.2)
+			smat_red.set_shader_parameter("core_sharpness", 2.2)
+			smat_red.set_shader_parameter("hold_power", 0.35)
+			smat_red.set_shader_parameter("slash_progress", 0.0)
+			m_red.material_override = smat_red
+			p_red.add_child(m_red)
+
+			_animate_lingering_power_slash(p_red, m_red, smat_red, 50.0 * slash_sign, -92.0 * slash_sign, 0.48, 1.25, flat_fwd * 0.35)
+
+			# Lưỡi Tầng Ngoài: Xanh Dương Lam Lôi (R = 2.78m, W = 0.72m, lệch 15°)
+			var p_blue := Node3D.new()
+			p_blue.name = "U%dRageDualSlashBlue" % (combo_step + 1)
+			scene_parent.add_child(p_blue)
+			p_blue.global_position = origin
+			p_blue.rotation = Vector3(0.0, yaw, deg_to_rad(tilt_base + 15.0 * slash_sign))
+
+			var m_blue := MeshInstance3D.new()
+			m_blue.mesh = build_curved_slash_arc_mesh(2.78, 0.72, 165.0, 36)
+			m_blue.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var smat_blue := ShaderMaterial.new()
+			smat_blue.shader = _get_stylized_slash_shader()
+			smat_blue.set_shader_parameter("core_color", Color(1.0, 1.0, 1.0, 1.0))
+			smat_blue.set_shader_parameter("mid_color", Color(0.0, 0.40, 1.0, 1.0)) # #0066FF
+			smat_blue.set_shader_parameter("edge_color", Color(0.0, 0.13, 0.67, 1.0)) # #0022AA
+			smat_blue.set_shader_parameter("accent_color", Color(0.0, 0.90, 1.0, 1.0)) # #00E5FF
+			smat_blue.set_shader_parameter("emission_strength", 6.2)
+			smat_blue.set_shader_parameter("core_sharpness", 2.2)
+			smat_blue.set_shader_parameter("hold_power", 0.35)
+			smat_blue.set_shader_parameter("slash_progress", 0.0)
+			m_blue.material_override = smat_blue
+			p_blue.add_child(m_blue)
+
+			_animate_lingering_power_slash(p_blue, m_blue, smat_blue, 54.0 * slash_sign, -96.0 * slash_sign, 0.48, 1.25, flat_fwd * 0.35)
+			return
+		else:
+			# U3 Trạng thái 2: Huyết Lam Long Thần Giáng (5 Đại Kiếm Khí Xếp Quạt)
+			spawn_u3_rage_crimson_cobalt_finale(tree_inst, origin, flat_fwd)
+			return
+
 	match combo_step:
 		0:
 			# Nhịp 1: Cung Trăng Lam Băng Cực Quang (#00F5FF) -> Vàng Phượng Hoàng (#FFD700) -> Tím Tinh Vân (#9D00FF)
@@ -868,6 +1221,215 @@ static func spawn_u3_heaven_shatter_finale(tree: SceneTree, origin: Vector3, for
 	l_tw.tween_property(light, "light_energy", 0.0, 0.32)
 	l_tw.chain().tween_callback(light.queue_free)
 
+
+## U3 Trạng thái 2: "HUYẾT LAM LONG THẦN GIÁNG" 5 Đại Kiếm Khí Xếp Quạt & Đọng Lại 0.58s (Directive 26 Task 26.4)
+static func spawn_u3_rage_crimson_cobalt_finale(tree: SceneTree, origin: Vector3, forward_dir: Vector3) -> void:
+	if tree == null:
+		tree = Engine.get_main_loop() as SceneTree
+	var scene_parent: Node = tree.current_scene if (tree and tree.current_scene) else (tree.root if tree else null)
+	if scene_parent == null:
+		return
+	var flat_fwd := Vector3(forward_dir.x, 0.0, forward_dir.z).normalized()
+	if flat_fwd.length_squared() < 0.001:
+		flat_fwd = Vector3.FORWARD
+	var impact_pos := _snap_vfx_to_ground(tree, origin + flat_fwd * 2.0)
+	var base_yaw := atan2(flat_fwd.x, flat_fwd.z)
+
+	# =========================================================================
+	# LỚP 1: NGŨ ĐẠI KIẾM KHÍ BỔ DỌC XẾP HÌNH CÁNH QUẠT (5 LƯỠI TÁCH RỜI)
+	# =========================================================================
+	var rage_u3_blades := [
+		# 1. Chính giữa yaw=0°, radius=2.85m, width=1.05m, roll=90°: Đỏ Huyết Tối Thượng
+		{"yaw_off": 0.0, "roll": deg_to_rad(90.0), "radius": 2.85, "width": 1.05, "mid": Color(1.0, 0.03, 0.14, 1.0), "edge": Color(0.60, 0.0, 0.0, 1.0), "accent": Color(1.0, 0.40, 0.0, 1.0)},
+		# 2. Cánh Trái Trong yaw=-18°, roll=72°, radius=2.55m, width=0.85m: Xanh Dương Điện Quang
+		{"yaw_off": deg_to_rad(-18.0), "roll": deg_to_rad(72.0), "radius": 2.55, "width": 0.85, "mid": Color(0.0, 0.40, 1.0, 1.0), "edge": Color(0.0, 0.12, 0.60, 1.0), "accent": Color(0.0, 0.94, 1.0, 1.0)},
+		# 3. Cánh Phải Trong yaw=+18°, roll=108°, radius=2.55m, width=0.85m: Xanh Dương Điện Quang
+		{"yaw_off": deg_to_rad(18.0), "roll": deg_to_rad(108.0), "radius": 2.55, "width": 0.85, "mid": Color(0.0, 0.40, 1.0, 1.0), "edge": Color(0.0, 0.12, 0.60, 1.0), "accent": Color(0.0, 0.94, 1.0, 1.0)},
+		# 4. Cánh Trái Ngoài yaw=-36°, roll=58°, radius=2.30m, width=0.75m: Đỏ Huyết Cực Quang
+		{"yaw_off": deg_to_rad(-36.0), "roll": deg_to_rad(58.0), "radius": 2.30, "width": 0.75, "mid": Color(1.0, 0.10, 0.21, 1.0), "edge": Color(0.53, 0.0, 0.08, 1.0), "accent": Color(0.0, 0.33, 1.0, 1.0)},
+		# 5. Cánh Phải Ngoài yaw=+36°, roll=122°, radius=2.30m, width=0.75m: Đỏ Huyết Cực Quang
+		{"yaw_off": deg_to_rad(36.0), "roll": deg_to_rad(122.0), "radius": 2.30, "width": 0.75, "mid": Color(1.0, 0.10, 0.21, 1.0), "edge": Color(0.53, 0.0, 0.08, 1.0), "accent": Color(0.0, 0.33, 1.0, 1.0)}
+	]
+
+	for b_idx in range(rage_u3_blades.size()):
+		var bcfg: Dictionary = rage_u3_blades[b_idx]
+		var pivot := Node3D.new()
+		pivot.name = "U3RageFiveBladeFan_%d" % b_idx
+		scene_parent.add_child(pivot)
+		pivot.global_position = origin + Vector3(0.0, 1.35, 0.0) + flat_fwd * 0.55
+		pivot.rotation = Vector3(0.0, base_yaw + float(bcfg["yaw_off"]), float(bcfg["roll"]))
+
+		var mesh_inst := MeshInstance3D.new()
+		mesh_inst.mesh = build_curved_slash_arc_mesh(float(bcfg["radius"]), float(bcfg["width"]), 160.0, 36)
+		mesh_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+		var smat := ShaderMaterial.new()
+		smat.shader = _get_stylized_slash_shader()
+		smat.set_shader_parameter("core_color", Color(1.0, 1.0, 1.0, 1.0))
+		smat.set_shader_parameter("mid_color", bcfg["mid"])
+		smat.set_shader_parameter("edge_color", bcfg["edge"])
+		smat.set_shader_parameter("accent_color", bcfg["accent"])
+		smat.set_shader_parameter("emission_strength", 9.8)
+		smat.set_shader_parameter("core_sharpness", 2.2)
+		smat.set_shader_parameter("hold_power", 0.35)
+		smat.set_shader_parameter("chromatic_shift", 0.75)
+		smat.set_shader_parameter("slash_progress", 0.0)
+		mesh_inst.material_override = smat
+		pivot.add_child(mesh_inst)
+
+		_animate_lingering_power_slash(pivot, mesh_inst, smat, 55.0, -95.0, 0.58, 1.28, flat_fwd * 0.42)
+
+	# =========================================================================
+	# LỚP 2: TAM TRÙNG VÒNG LỤA XOÁY PHÂN TẦNG ĐỎ - XANH (3 CYCLONE RINGS, 0.62s)
+	# =========================================================================
+	_spawn_prismatic_cyclone_ring_ribbon(
+		tree, impact_pos, 0.4, 2.2, 0.65,
+		Color(1.0, 1.0, 1.0, 1.0), Color(1.0, 0.03, 0.14, 1.0), Color(0.70, 0.0, 0.10, 1.0), Color(1.0, 0.35, 0.0, 1.0),
+		14.0, 0.62, "U3RageCycloneRing_0"
+	)
+	_spawn_prismatic_cyclone_ring_ribbon(
+		tree, impact_pos + Vector3(0.0, 0.05, 0.0), 1.2, 3.3, 0.65,
+		Color(1.0, 1.0, 1.0, 1.0), Color(0.0, 0.40, 1.0, 1.0), Color(0.0, 0.12, 0.60, 1.0), Color(0.0, 0.90, 1.0, 1.0),
+		-15.0, 0.62, "U3RageCycloneRing_1"
+	)
+	_spawn_prismatic_cyclone_ring_ribbon(
+		tree, impact_pos + Vector3(0.0, 0.10, 0.0), 2.0, 4.3, 0.65,
+		Color(1.0, 1.0, 1.0, 1.0), Color(1.0, 0.03, 0.14, 1.0), Color(0.0, 0.30, 1.0, 1.0), Color(0.0, 0.90, 1.0, 1.0),
+		12.0, 0.62, "U3RageCycloneRing_2"
+	)
+
+	# =========================================================================
+	# LỚP 3: 4 CỘT LỐC XOÁY LỤA ĐỎ - XANH CAO 4.2M (4 VERTICAL HELIX PILLARS)
+	# =========================================================================
+	for h_idx in range(4):
+		var pillar_pivot := Node3D.new()
+		pillar_pivot.name = "U3RageHelixPillar_%d" % h_idx
+		scene_parent.add_child(pillar_pivot)
+		pillar_pivot.global_position = impact_pos + Vector3(0.0, 0.20 + h_idx * 0.35, 0.0)
+		pillar_pivot.rotation.z = deg_to_rad(24.0 if (h_idx % 2 == 0) else -24.0)
+
+		var p_mesh := MeshInstance3D.new()
+		p_mesh.mesh = build_curved_slash_arc_mesh(1.25, 0.78, 270.0, 36)
+		p_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var p_mat := ShaderMaterial.new()
+		p_mat.shader = _get_stylized_slash_shader()
+		p_mat.set_shader_parameter("core_color", Color(1.0, 1.0, 1.0, 1.0))
+		var is_red := (h_idx % 2 == 0)
+		p_mat.set_shader_parameter("mid_color", Color(1.0, 0.04, 0.14, 1.0) if is_red else Color(0.0, 0.42, 1.0, 1.0))
+		p_mat.set_shader_parameter("edge_color", Color(0.70, 0.0, 0.08, 1.0) if is_red else Color(0.0, 0.15, 0.80, 1.0))
+		p_mat.set_shader_parameter("accent_color", Color(1.0, 0.40, 0.0, 1.0) if is_red else Color(0.0, 0.85, 1.0, 1.0))
+		p_mat.set_shader_parameter("emission_strength", 8.8)
+		p_mat.set_shader_parameter("core_sharpness", 2.2)
+		p_mesh.material_override = p_mat
+		pillar_pivot.add_child(p_mesh)
+
+		var p_tw := pillar_pivot.create_tween()
+		p_tw.set_parallel(true)
+		p_tw.tween_property(pillar_pivot, "global_position:y", impact_pos.y + 4.2, 0.56).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		p_tw.tween_property(pillar_pivot, "rotation:y", (1.0 if (h_idx % 2 == 0) else -1.0) * TAU * 1.6, 0.56)
+		p_tw.tween_property(pillar_pivot, "scale", Vector3(2.1, 1.65, 2.1), 0.56)
+		p_tw.tween_method(func(val: float):
+			if is_instance_valid(p_mat):
+				p_mat.set_shader_parameter("slash_progress", val)
+		, 0.0, 1.0, 0.56)
+		p_tw.chain().tween_callback(pillar_pivot.queue_free)
+
+	# =========================================================================
+	# LỚP 4: 2 ẤN CHÚ NỨT ĐẤT ĐỌNG LẠI 1.10 GIÂY
+	# =========================================================================
+	var decal_configs := [
+		{"tex": "res://assets/vfx_textures/kenney_particles/scorch_02.png", "size": 5.2, "col": Color(1.0, 0.05, 0.15, 0.95), "energy": 6.0, "spin": 2.0},
+		{"tex": "res://assets/vfx_textures/kenney_particles/circle_05.png", "size": 4.6, "col": Color(0.0, 0.45, 1.0, 0.95), "energy": 6.5, "spin": -3.0}
+	]
+	for d_idx in range(decal_configs.size()):
+		var dcfg: Dictionary = decal_configs[d_idx]
+		var dec := Decal.new()
+		dec.name = "U3RageDecal_%d" % d_idx
+		var dtex := _load_cached_tex(String(dcfg["tex"]))
+		if dtex:
+			dec.texture_albedo = dtex
+			dec.texture_emission = dtex
+		dec.modulate = dcfg["col"]
+		dec.emission_energy = float(dcfg["energy"])
+		var s: float = float(dcfg["size"])
+		dec.size = Vector3(s * 0.2, 3.0, s * 0.2)
+		scene_parent.add_child(dec)
+		dec.global_position = impact_pos
+		var d_tw := dec.create_tween()
+		d_tw.set_parallel(true)
+		d_tw.tween_property(dec, "size", Vector3(s, 3.0, s), 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		d_tw.tween_property(dec, "rotation:y", float(dcfg["spin"]), 1.10)
+		d_tw.tween_property(dec, "modulate:a", 0.0, 0.45).set_delay(0.65)
+		d_tw.chain().tween_callback(dec.queue_free)
+
+	# =========================================================================
+	# LỚP 5: HOA ĐĂNG ĐỎ - XANH DƯƠNG TẠI TÂM VA CHẠM
+	# =========================================================================
+	_spawn_kenney_star_flare_burst(
+		tree, impact_pos + Vector3(0.0, 0.65, 0.0), 3.8,
+		Color(1.0, 0.10, 0.25, 1.0), Color(0.0, 0.50, 1.0, 1.0), 0.42
+	)
+
+	# =========================================================================
+	# LỚP 6: ĐÀI PHUN 56 HẠT ĐỎ - XANH DƯƠNG PHUN TRÀO (GPUPARTICLES3D)
+	# =========================================================================
+	var sparks := GPUParticles3D.new()
+	sparks.name = "U3RagePrismaticFountainParticles"
+	sparks.amount = 56
+	sparks.lifetime = 0.58
+	sparks.one_shot = true
+	sparks.explosiveness = 0.94
+	sparks.draw_pass_1 = get_safe_particle_quad_mesh(Vector2(0.44, 0.44))
+
+	var pmat := ParticleProcessMaterial.new()
+	pmat.direction = Vector3(0.0, 1.0, 0.0)
+	pmat.spread = 65.0
+	pmat.initial_velocity_min = 7.5
+	pmat.initial_velocity_max = 15.0
+	pmat.gravity = Vector3(0.0, -17.0, 0.0)
+	pmat.scale_min = 0.65
+	pmat.scale_max = 1.45
+	pmat.color_ramp = _get_rage_crimson_cobalt_ramp()
+	sparks.process_material = pmat
+
+	var spark_draw_mat := StandardMaterial3D.new()
+	spark_draw_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	spark_draw_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	spark_draw_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	spark_draw_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	spark_draw_mat.vertex_color_use_as_albedo = true
+	var stex := _load_cached_tex("res://assets/vfx_textures/kenney_particles/spark_05.png")
+	if stex:
+		spark_draw_mat.albedo_texture = stex
+	spark_draw_mat.emission_enabled = true
+	spark_draw_mat.emission = Color(1.0, 0.4, 0.6)
+	spark_draw_mat.emission_energy_multiplier = 4.5
+	sparks.material_override = spark_draw_mat
+
+	scene_parent.add_child(sparks)
+	sparks.global_position = impact_pos + Vector3(0.0, 0.35, 0.0)
+	sparks.emitting = true
+	var sp_tw := sparks.create_tween()
+	sp_tw.tween_interval(0.75)
+	sp_tw.tween_callback(sparks.queue_free)
+
+	# =========================================================================
+	# LỚP 7: XUNG ÁNH SÁNG ĐỘNG OMNILIGHT3D
+	# =========================================================================
+	var light := OmniLight3D.new()
+	light.name = "U3RageFlashLight"
+	light.shadow_enabled = false
+	light.omni_range = 8.2
+	light.light_color = Color(1.0, 0.15, 0.30)
+	light.light_energy = 7.0
+	scene_parent.add_child(light)
+	light.global_position = impact_pos + Vector3(0.0, 1.2, 0.0)
+	var l_tw := light.create_tween()
+	l_tw.set_parallel(true)
+	l_tw.tween_property(light, "light_color", Color(0.0, 0.45, 1.0), 0.48)
+	l_tw.tween_property(light, "light_energy", 0.0, 0.48)
+	l_tw.chain().tween_callback(light.queue_free)
+
 ## Chiêu 2: Khiên Phản Kích RMB — Thánh Khiên Ấn Chú & Mũi Giáo Xoáy
 static func spawn_shield_bash_vfx(
 	origin: Vector3,
@@ -935,11 +1497,18 @@ static func spawn_shield_bash_vfx(
 	# Vòng sóng xung kích Decal dưới sàn
 	spawn_ground_decal_shockwave(p, origin, 2.5, Color(0.3, 0.7, 1.0, 0.8))
 
-## Chiêu [I / RMB] Pha 1: Thánh Kiếm Phá Không Trảm: Cực Quang Thập Tự (Directive 25 Task 25.4)
-static func spawn_rmb_solar_cross_cleave(arg1 = null, arg2 = null, arg3 = null) -> Node3D:
+## Chiêu [I / RMB] Pha 1: Thánh Kiếm Phá Không Trảm: Cực Quang Thập Tự (Directive 25 & Directive 26)
+static func spawn_rmb_solar_cross_cleave(arg1 = null, arg2 = null, arg3 = null, arg4 = null) -> Node3D:
 	var tree: SceneTree = null
 	var origin: Vector3 = Vector3.ZERO
 	var forward_dir: Vector3 = Vector3.FORWARD
+	var is_rage: bool = false
+
+	if arg4 is bool:
+		is_rage = arg4
+	elif arg3 is bool:
+		is_rage = arg3
+
 	if arg1 is SceneTree:
 		tree = arg1
 		origin = arg2 if arg2 is Vector3 else Vector3.ZERO
@@ -968,6 +1537,79 @@ static func spawn_rmb_solar_cross_cleave(arg1 = null, arg2 = null, arg3 = null) 
 	var base_yaw := atan2(flat_fwd.x, flat_fwd.z)
 	var cross_center := origin + Vector3(0.0, 1.15, 0.0) + flat_fwd * 1.15
 	var ground_pos := _snap_vfx_to_ground(tree, origin + flat_fwd * 1.65)
+
+	if is_rage:
+		# =========================================================================
+		# TRẠNG THÁI 2: LỤC KIẾM KHÍ CHỮ X TÁCH 3 TẦNG BÁN KÍNH (RMBHexaRageXSlash)
+		# =========================================================================
+		var rage_x_blades := [
+			# 3 Vế Chéo Phải (+): Đỏ Huyết Ngục (#FF0824 / #CC0011) ở R=1.95m, 2.55m, 3.15m
+			{"roll": deg_to_rad(38.0), "radius": 1.95, "width": 0.85, "dir": 1.0, "mid": Color(1.0, 0.03, 0.14, 1.0), "edge": Color(0.80, 0.0, 0.07, 1.0), "accent": Color(1.0, 0.35, 0.0, 1.0)},
+			{"roll": deg_to_rad(44.0), "radius": 2.55, "width": 0.78, "dir": 1.0, "mid": Color(1.0, 0.03, 0.14, 1.0), "edge": Color(0.80, 0.0, 0.07, 1.0), "accent": Color(1.0, 0.35, 0.0, 1.0)},
+			{"roll": deg_to_rad(50.0), "radius": 3.15, "width": 0.70, "dir": 1.0, "mid": Color(1.0, 0.03, 0.14, 1.0), "edge": Color(0.80, 0.0, 0.07, 1.0), "accent": Color(1.0, 0.35, 0.0, 1.0)},
+			# 3 Vế Chéo Trái (-): Xanh Dương Lam Lôi (#0055FF / #00C8FF) ở R=1.95m, 2.55m, 3.15m
+			{"roll": deg_to_rad(-38.0), "radius": 1.95, "width": 0.85, "dir": -1.0, "mid": Color(0.0, 0.33, 1.0, 1.0), "edge": Color(0.0, 0.12, 0.75, 1.0), "accent": Color(0.0, 0.80, 1.0, 1.0)},
+			{"roll": deg_to_rad(-44.0), "radius": 2.55, "width": 0.78, "dir": -1.0, "mid": Color(0.0, 0.33, 1.0, 1.0), "edge": Color(0.0, 0.12, 0.75, 1.0), "accent": Color(0.0, 0.80, 1.0, 1.0)},
+			{"roll": deg_to_rad(-50.0), "radius": 3.15, "width": 0.70, "dir": -1.0, "mid": Color(0.0, 0.33, 1.0, 1.0), "edge": Color(0.0, 0.12, 0.75, 1.0), "accent": Color(0.0, 0.80, 1.0, 1.0)}
+		]
+
+		for idx in range(rage_x_blades.size()):
+			var bcfg: Dictionary = rage_x_blades[idx]
+			var pivot := Node3D.new()
+			pivot.name = "RMBHexaRageXSlash_%d" % idx
+			scene_parent.add_child(pivot)
+			pivot.global_position = cross_center
+			pivot.rotation = Vector3(0.0, base_yaw, float(bcfg["roll"]))
+
+			var arc_inst := MeshInstance3D.new()
+			arc_inst.mesh = build_curved_slash_arc_mesh(float(bcfg["radius"]), float(bcfg["width"]), 160.0, 36)
+			arc_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+			var smat := ShaderMaterial.new()
+			smat.shader = _get_stylized_slash_shader()
+			smat.set_shader_parameter("core_color", Color(1.0, 1.0, 1.0, 1.0))
+			smat.set_shader_parameter("mid_color", bcfg["mid"])
+			smat.set_shader_parameter("edge_color", bcfg["edge"])
+			smat.set_shader_parameter("accent_color", bcfg["accent"])
+			smat.set_shader_parameter("emission_strength", 9.8)
+			smat.set_shader_parameter("core_sharpness", 2.2)
+			smat.set_shader_parameter("hold_power", 0.35)
+			smat.set_shader_parameter("chromatic_shift", 0.75)
+			smat.set_shader_parameter("slash_progress", 0.0)
+			arc_inst.material_override = smat
+			pivot.add_child(arc_inst)
+
+			var dir_sign: float = float(bcfg["dir"])
+			_animate_lingering_power_slash(pivot, arc_inst, smat, 52.0 * dir_sign, -92.0 * dir_sign, 0.54, 1.28, flat_fwd * 0.38)
+
+		# Hoa đăng & Vòng lụa xoáy Đỏ - Xanh Dương
+		_spawn_kenney_star_flare_burst(
+			tree, cross_center + flat_fwd * 0.75, 3.8,
+			Color(1.0, 0.08, 0.20, 1.0), Color(0.0, 0.45, 1.0, 1.0), 0.35
+		)
+		_spawn_prismatic_cyclone_ring_ribbon(
+			tree, ground_pos, 0.5, 3.4, 0.65,
+			Color(1,1,1,1), Color(1.0, 0.04, 0.14, 1), Color(0.0, 0.40, 1.0, 1), Color(0.0, 0.9, 1.0, 1),
+			15.0, 0.42, "RMBRageCycloneRing"
+		)
+
+		var sigil := Decal.new()
+		sigil.name = "RMBRageDecal"
+		var stex := _load_cached_tex("res://assets/vfx_textures/kenney_particles/circle_04.png")
+		if stex:
+			sigil.texture_albedo = stex
+			sigil.texture_emission = stex
+		sigil.modulate = Color(1.0, 0.10, 0.25, 0.95)
+		sigil.emission_energy = 6.5
+		sigil.size = Vector3(4.2, 3.0, 4.2)
+		scene_parent.add_child(sigil)
+		sigil.global_position = ground_pos
+		var s_tw := sigil.create_tween()
+		s_tw.set_parallel(true)
+		s_tw.tween_property(sigil, "rotation:y", deg_to_rad(140.0), 0.65)
+		s_tw.tween_property(sigil, "modulate:a", 0.0, 0.35).set_delay(0.30)
+		s_tw.chain().tween_callback(sigil.queue_free)
+		return null
 
 	# =========================================================================
 	# LỚP 1 & 2: TỨ KIẾM KHÍ CHỮ X ĐA SẮC (2 LƯỠI HOÀNG KIM + 2 LƯỠI CỰC QUANG)
@@ -1050,20 +1692,25 @@ static func spawn_rmb_solar_cross_cleave(arg1 = null, arg2 = null, arg3 = null) 
 
 	return null
 
-## Chiêu [I / RMB] Pha 2: Đại Sóng Kiếm Khí Tam Dực Càn Quét 4.8m Mặt Đất (Directive 25 Task 25.4)
+## Chiêu [I / RMB] Pha 2: Đại Sóng Kiếm Khí Càn Quét Mặt Đất (Directive 25 & Directive 26)
 static func spawn_rmb_traveling_crescent_wave(
 	tree: SceneTree,
 	origin: Vector3,
 	forward_dir: Vector3,
 	travel_distance: float = 4.8,
 	travel_speed: float = 18.0,
-	wave_damage: float = 30.0
+	wave_damage: float = 30.0,
+	is_rage: bool = false
 ) -> Node3D:
 	if tree == null:
 		tree = Engine.get_main_loop() as SceneTree
 	var scene_parent: Node = tree.current_scene if (tree and tree.current_scene) else (tree.root if tree else null)
 	if scene_parent == null:
 		return null
+
+	if is_rage:
+		travel_distance = 6.2
+		wave_damage = 44.0
 
 	var flat_fwd := Vector3(forward_dir.x, 0.0, forward_dir.z).normalized()
 	if flat_fwd.length_squared() < 0.001:
@@ -1072,29 +1719,44 @@ static func spawn_rmb_traveling_crescent_wave(
 	var start_pos := _snap_vfx_to_ground(tree, origin + flat_fwd * 0.9)
 
 	var wave_root := Node3D.new()
-	wave_root.name = "RMBPrismaticTripleWave3D"
+	wave_root.name = "RMBFiveWingRageWave3D" if is_rage else "RMBPrismaticTripleWave3D"
 	scene_parent.add_child(wave_root)
 	wave_root.global_position = start_pos
 	wave_root.rotation.y = base_yaw
 
 	# =========================================================================
-	# LỚP 5: KẾT CẤU SÓNG KIẾM 3 CÁNH LỤA CONG (TRIPLE-WINGED SLASH RIBBONS)
+	# KẾT CẤU CÁNH LỤA CONG: 5 CÁNH NẾU NỘ / 3 CÁNH NẾU MẶC ĐỊNH
 	# =========================================================================
-	var wing_specs := [
-		# Lưỡi Trung Tâm (Dựng đứng 82° - Hoàng Kim & Đỏ Lửa)
-		{"roll": deg_to_rad(82.0), "pitch": deg_to_rad(-12.0), "radius": 1.65, "width": 0.95, "y_off": 0.95, "core": Color(1,1,1,1), "mid": Color(1.0, 0.88, 0.15, 1), "edge": Color(1.0, 0.18, 0.02, 1), "accent": Color(1.0, 0.0, 0.7, 1)},
-		# Cánh Phượng Hoàng Bên Trái (Mở nghiêng +36° - Xanh Băng & Hồng Tím)
-		{"roll": deg_to_rad(36.0), "pitch": deg_to_rad(-6.0), "radius": 1.85, "width": 0.78, "y_off": 0.65, "core": Color(1,1,1,1), "mid": Color(0.0, 0.96, 1.0, 1), "edge": Color(0.75, 0.0, 1.0, 1), "accent": Color(1.0, 0.25, 0.65, 1)},
-		# Cánh Phượng Hoàng Bên Phải (Mở nghiêng -36° - Hồng Cực Quang & Lam Sét)
-		{"roll": deg_to_rad(-36.0), "pitch": deg_to_rad(-6.0), "radius": 1.85, "width": 0.78, "y_off": 0.65, "core": Color(1,1,1,1), "mid": Color(1.0, 0.22, 0.75, 1), "edge": Color(0.0, 0.55, 1.0, 1), "accent": Color(1.0, 0.9, 0.15, 1)}
-	]
+	var wing_specs: Array = []
+	if is_rage:
+		wing_specs = [
+			# 1. Cánh Trung Tâm Dựng Đứng 84°: Đỏ Huyết (#FF0824)
+			{"roll": deg_to_rad(84.0), "pitch": deg_to_rad(-12.0), "radius": 2.05, "width": 1.05, "y_off": 0.95, "x_off": 0.0, "core": Color(1,1,1,1), "mid": Color(1.0, 0.03, 0.14, 1), "edge": Color(0.72, 0.0, 0.07, 1), "accent": Color(1.0, 0.35, 0.0, 1)},
+			# 2. Cánh Nội Trái +32°: Xanh Dương Điện Quang (#0055FF -> #00E5FF)
+			{"roll": deg_to_rad(32.0), "pitch": deg_to_rad(-6.0), "radius": 2.20, "width": 0.85, "y_off": 0.65, "x_off": -0.35, "core": Color(1,1,1,1), "mid": Color(0.0, 0.33, 1.0, 1), "edge": Color(0.0, 0.12, 0.70, 1), "accent": Color(0.0, 0.90, 1.0, 1)},
+			# 3. Cánh Nội Phải -32°: Xanh Dương Điện Quang (#0055FF -> #00E5FF)
+			{"roll": deg_to_rad(-32.0), "pitch": deg_to_rad(-6.0), "radius": 2.20, "width": 0.85, "y_off": 0.65, "x_off": 0.35, "core": Color(1,1,1,1), "mid": Color(0.0, 0.33, 1.0, 1), "edge": Color(0.0, 0.12, 0.70, 1), "accent": Color(0.0, 0.90, 1.0, 1)},
+			# 4. Cánh Đại Bàng Ngoài Trái +58°: Đỏ Huyết Viền Lam (#FF1122 -> #0044FF)
+			{"roll": deg_to_rad(58.0), "pitch": deg_to_rad(-8.0), "radius": 2.45, "width": 0.80, "y_off": 0.50, "x_off": -0.65, "core": Color(1,1,1,1), "mid": Color(1.0, 0.07, 0.13, 1), "edge": Color(0.65, 0.0, 0.06, 1), "accent": Color(0.0, 0.27, 1.0, 1)},
+			# 5. Cánh Đại Bàng Ngoài Phải -58°: Đỏ Huyết Viền Lam (#FF1122 -> #0044FF)
+			{"roll": deg_to_rad(-58.0), "pitch": deg_to_rad(-8.0), "radius": 2.45, "width": 0.80, "y_off": 0.50, "x_off": 0.65, "core": Color(1,1,1,1), "mid": Color(1.0, 0.07, 0.13, 1), "edge": Color(0.65, 0.0, 0.06, 1), "accent": Color(0.0, 0.27, 1.0, 1)}
+		]
+	else:
+		wing_specs = [
+			# Lưỡi Trung Tâm (Dựng đứng 82° - Hoàng Kim & Đỏ Lửa)
+			{"roll": deg_to_rad(82.0), "pitch": deg_to_rad(-12.0), "radius": 1.65, "width": 0.95, "y_off": 0.95, "x_off": 0.0, "core": Color(1,1,1,1), "mid": Color(1.0, 0.88, 0.15, 1), "edge": Color(1.0, 0.18, 0.02, 1), "accent": Color(1.0, 0.0, 0.7, 1)},
+			# Cánh Phượng Hoàng Bên Trái (Mở nghiêng +36° - Xanh Băng & Hồng Tím)
+			{"roll": deg_to_rad(36.0), "pitch": deg_to_rad(-6.0), "radius": 1.85, "width": 0.78, "y_off": 0.65, "x_off": 0.0, "core": Color(1,1,1,1), "mid": Color(0.0, 0.96, 1.0, 1), "edge": Color(0.75, 0.0, 1.0, 1), "accent": Color(1.0, 0.25, 0.65, 1)},
+			# Cánh Phượng Hoàng Bên Phải (Mở nghiêng -36° - Hồng Cực Quang & Lam Sét)
+			{"roll": deg_to_rad(-36.0), "pitch": deg_to_rad(-6.0), "radius": 1.85, "width": 0.78, "y_off": 0.65, "x_off": 0.0, "core": Color(1,1,1,1), "mid": Color(1.0, 0.22, 0.75, 1), "edge": Color(0.0, 0.55, 1.0, 1), "accent": Color(1.0, 0.9, 0.15, 1)}
+		]
 
 	var wave_mats: Array[ShaderMaterial] = []
 	for w in wing_specs:
 		var wing_inst := MeshInstance3D.new()
 		wing_inst.mesh = build_curved_slash_arc_mesh(float(w["radius"]), float(w["width"]), 150.0, 36)
 		wing_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		wing_inst.position = Vector3(0.0, float(w["y_off"]), 0.0)
+		wing_inst.position = Vector3(float(w.get("x_off", 0.0)), float(w["y_off"]), 0.0)
 		wing_inst.rotation = Vector3(float(w["pitch"]), deg_to_rad(-90.0), float(w["roll"]))
 
 		var wmat := ShaderMaterial.new()
@@ -1103,7 +1765,9 @@ static func spawn_rmb_traveling_crescent_wave(
 		wmat.set_shader_parameter("mid_color", w["mid"])
 		wmat.set_shader_parameter("edge_color", w["edge"])
 		wmat.set_shader_parameter("accent_color", w["accent"])
-		wmat.set_shader_parameter("emission_strength", 9.0)
+		wmat.set_shader_parameter("emission_strength", 9.8 if is_rage else 9.0)
+		wmat.set_shader_parameter("core_sharpness", 2.2 if is_rage else 1.65)
+		wmat.set_shader_parameter("hold_power", 0.35 if is_rage else 0.25)
 		wmat.set_shader_parameter("chromatic_shift", 0.80)
 		wmat.set_shader_parameter("slash_progress", 0.0)
 		wing_inst.material_override = wmat
@@ -1111,19 +1775,19 @@ static func spawn_rmb_traveling_crescent_wave(
 		wave_mats.append(wmat)
 
 	# =========================================================================
-	# LỚP 6: LUỒNG HẠT CẦU VỒNG & ĐÈN OMNILIGHT3D BÁM ĐUÔI SÓNG KIẾM
+	# LUỒNG HẠT & ĐÈN OMNILIGHT3D BÁM ĐUÔI SÓNG KIẾM
 	# =========================================================================
 	var wake_particles := GPUParticles3D.new()
-	wake_particles.amount = 32
-	wake_particles.lifetime = 0.30
-	wake_particles.draw_pass_1 = get_safe_particle_quad_mesh(Vector2(0.38, 0.38))
+	wake_particles.amount = 40 if is_rage else 32
+	wake_particles.lifetime = 0.35 if is_rage else 0.30
+	wake_particles.draw_pass_1 = get_safe_particle_quad_mesh(Vector2(0.42, 0.42) if is_rage else Vector2(0.38, 0.38))
 	var wp_mat := ParticleProcessMaterial.new()
 	wp_mat.direction = Vector3(0.0, 0.4, -1.0)
 	wp_mat.spread = 42.0
-	wp_mat.initial_velocity_min = 4.0
-	wp_mat.initial_velocity_max = 8.5
+	wp_mat.initial_velocity_min = 4.5 if is_rage else 4.0
+	wp_mat.initial_velocity_max = 9.5 if is_rage else 8.5
 	wp_mat.gravity = Vector3(0.0, -5.0, 0.0)
-	wp_mat.color_ramp = _get_prismatic_color_ramp()
+	wp_mat.color_ramp = _get_rage_crimson_cobalt_ramp() if is_rage else _get_prismatic_color_ramp()
 	wake_particles.process_material = wp_mat
 
 	var wp_draw := StandardMaterial3D.new()
@@ -1136,26 +1800,26 @@ static func spawn_rmb_traveling_crescent_wave(
 	if ftex:
 		wp_draw.albedo_texture = ftex
 	wp_draw.emission_enabled = true
-	wp_draw.emission = Color(1.0, 0.8, 0.9)
-	wp_draw.emission_energy_multiplier = 4.0
+	wp_draw.emission = Color(1.0, 0.25, 0.45) if is_rage else Color(1.0, 0.8, 0.9)
+	wp_draw.emission_energy_multiplier = 4.5 if is_rage else 4.0
 	wake_particles.material_override = wp_draw
 	wake_particles.position = Vector3(0.0, 0.55, 0.0)
 	wave_root.add_child(wake_particles)
 
 	var wave_light := OmniLight3D.new()
 	wave_light.shadow_enabled = false
-	wave_light.omni_range = 5.5
-	wave_light.light_color = Color(1.0, 0.72, 0.35)
-	wave_light.light_energy = 5.0
+	wave_light.omni_range = 6.8 if is_rage else 5.5
+	wave_light.light_color = Color(1.0, 0.20, 0.35) if is_rage else Color(1.0, 0.72, 0.35)
+	wave_light.light_energy = 5.8 if is_rage else 5.0
 	wave_light.position = Vector3(0.0, 0.85, 0.0)
 	wave_root.add_child(wave_light)
 
 	# =========================================================================
-	# LỚP 7 & 8: HÀNH TRÌNH CÀY ĐẤT, QUÉT SÁT THƯƠNG BOT & ĐẠI TINH VÂN CUỐI ĐƯỜNG
+	# HÀNH TRÌNH CÀY ĐẤT, QUÉT SÁT THƯƠNG BOT & LINGERING FINALE ANCHOR
 	# =========================================================================
 	var duration := maxf(0.18, travel_distance / maxf(1.0, travel_speed))
 	var hit_enemies: Dictionary = {}
-	var state := {"dist": 0.0, "next_rupture": 0.75}
+	var state := {"dist": 0.0, "next_rupture": 0.70}
 
 	var tw := wave_root.create_tween()
 	tw.set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
@@ -1178,72 +1842,116 @@ static func spawn_rmb_traveling_crescent_wave(
 			if is_instance_valid(enemy) and not hit_enemies.has(enemy.get_instance_id()):
 				var d_xz := Vector2(enemy.global_position.x - snapped.x, enemy.global_position.z - snapped.z).length()
 				var d_y := absf(enemy.global_position.y - snapped.y)
-				if d_xz <= 2.35 and d_y <= 2.2:
+				if d_xz <= (2.85 if is_rage else 2.35) and d_y <= 2.2:
 					hit_enemies[enemy.get_instance_id()] = true
 					if enemy.has_method("take_hit"):
-						enemy.take_hit(wave_damage, flat_fwd * 2.2, 0.65)
+						enemy.take_hit(wave_damage, flat_fwd * (2.8 if is_rage else 2.2), 0.70 if is_rage else 0.65)
 					elif enemy.has_method("take_damage"):
 						enemy.take_damage(wave_damage, flat_fwd)
 					if enemy.has_method("apply_knockback"):
-						enemy.apply_knockback(flat_fwd * 11.0)
+						enemy.apply_knockback(flat_fwd * (13.5 if is_rage else 11.0))
 					if enemy.has_method("apply_hit_stun"):
-						enemy.apply_hit_stun(0.65)
+						enemy.apply_hit_stun(0.70 if is_rage else 0.65)
 					spawn_hit_sparks(tree, enemy.global_position + Vector3(0.0, 1.0, 0.0), flat_fwd)
 
-		# LỚP 7: Cứ mỗi 0.95m sóng kiếm đi qua -> Bung vòng lụa xoáy + Ấn chú cháy dưới đất
+		# Cứ mỗi 0.90m sóng kiếm đi qua -> Bung vòng lụa xoáy + Ấn chú cháy dưới đất
 		if cur_dist >= float(state["next_rupture"]):
-			state["next_rupture"] = float(state["next_rupture"]) + 0.95
-			_spawn_prismatic_cyclone_ring_ribbon(
-				tree, snapped, 0.35, 1.95, 0.38,
-				Color(1,1,1,1), Color(1.0, 0.85, 0.2, 1), Color(1.0, 0.15, 0.55, 1), Color(0.0, 0.9, 1.0, 1),
-				15.0, 0.26
-			)
+			state["next_rupture"] = float(state["next_rupture"]) + (0.90 if is_rage else 0.95)
+			if is_rage:
+				_spawn_prismatic_cyclone_ring_ribbon(
+					tree, snapped, 0.40, 2.35, 0.45,
+					Color(1,1,1,1), Color(1.0, 0.04, 0.14, 1), Color(0.0, 0.45, 1.0, 1), Color(0.0, 0.9, 1.0, 1),
+					16.0, 0.35, "RMBRagePathRing"
+				)
+			else:
+				_spawn_prismatic_cyclone_ring_ribbon(
+					tree, snapped, 0.35, 1.95, 0.38,
+					Color(1,1,1,1), Color(1.0, 0.85, 0.2, 1), Color(1.0, 0.15, 0.55, 1), Color(0.0, 0.9, 1.0, 1),
+					15.0, 0.26
+				)
 			var step_dec := Decal.new()
 			var dtex := _load_cached_tex("res://assets/vfx_textures/kenney_particles/scorch_02.png")
 			if dtex:
 				step_dec.texture_albedo = dtex
 				step_dec.texture_emission = dtex
-			step_dec.modulate = Color(1.0, 0.45, 0.15, 0.88)
-			step_dec.emission_energy = 4.5
-			step_dec.size = Vector3(2.2, 2.4, 2.2)
+			step_dec.modulate = Color(1.0, 0.12, 0.20, 0.92) if is_rage else Color(1.0, 0.45, 0.15, 0.88)
+			step_dec.emission_energy = 5.5 if is_rage else 4.5
+			step_dec.size = Vector3(2.6, 2.6, 2.6) if is_rage else Vector3(2.2, 2.4, 2.2)
 			scene_parent.add_child(step_dec)
 			step_dec.global_position = snapped
 			var dtw := step_dec.create_tween()
-			dtw.tween_property(step_dec, "modulate:a", 0.0, 0.65).set_delay(0.35)
+			dtw.tween_property(step_dec, "modulate:a", 0.0, 0.85 if is_rage else 0.65).set_delay(0.35)
 			dtw.tween_callback(step_dec.queue_free)
 
-		if t > 0.72:
+		if not is_rage and t > 0.72:
 			var fade_val := (t - 0.72) / 0.28
 			for wm in wave_mats:
 				if is_instance_valid(wm):
 					wm.set_shader_parameter("slash_progress", fade_val)
 	, 0.0, 1.0, duration)
 
-	# LỚP 8: ĐẠI TINH VÂN BÙNG NỔ CUỐI HÀNH TRÌNH (GRAND FINALE PRISMATIC NOVA)
-	tw.tween_callback(func():
-		if is_instance_valid(wave_root):
-			var end_pos := wave_root.global_position
-			_spawn_prismatic_cyclone_ring_ribbon(
-				tree, end_pos, 0.5, 3.1, 0.60,
-				Color(1,1,1,1), Color(0.0, 0.95, 1.0, 1), Color(1.0, 0.15, 0.75, 1), Color(1.0, 0.88, 0.15, 1),
-				16.0, 0.36
-			)
-			_spawn_kenney_star_flare_burst(
-				tree, end_pos + Vector3(0.0, 0.65, 0.0), 3.0,
-				Color(1.0, 0.9, 0.3, 1.0), Color(0.85, 0.2, 1.0, 1.0), 0.28
-			)
-			wave_root.queue_free()
-	)
+	# =========================================================================
+	# ĐẠI TINH VÂN BÙNG NỔ CUỐI HÀNH TRÌNH (LINGERING FINALE ANCHOR KHI NỘ)
+	# =========================================================================
+	if is_rage:
+		# Đọng lại tại điểm cuối 6.2m thêm 0.35s và phình to 1.35x trước khi nổ
+		tw.chain().set_parallel(true)
+		tw.tween_property(wave_root, "scale", Vector3.ONE * 1.35, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tw.tween_method(func(v: float):
+			for wm in wave_mats:
+				if is_instance_valid(wm):
+					wm.set_shader_parameter("slash_progress", v)
+		, 0.0, 0.45, 0.35)
+		tw.chain().tween_callback(func():
+			if is_instance_valid(wave_root):
+				var end_pos := wave_root.global_position
+				_spawn_prismatic_cyclone_ring_ribbon(
+					tree, end_pos, 0.6, 3.8, 0.75,
+					Color(1,1,1,1), Color(1.0, 0.04, 0.14, 1), Color(0.0, 0.45, 1.0, 1), Color(0.0, 0.9, 1.0, 1),
+					18.0, 0.45, "RMBRageNovaRing"
+				)
+				_spawn_kenney_star_flare_burst(
+					tree, end_pos + Vector3(0.0, 0.75, 0.0), 3.8,
+					Color(1.0, 0.1, 0.25, 1.0), Color(0.0, 0.5, 1.0, 1.0), 0.35
+				)
+				wave_root.queue_free()
+		)
+	else:
+		tw.tween_callback(func():
+			if is_instance_valid(wave_root):
+				var end_pos := wave_root.global_position
+				_spawn_prismatic_cyclone_ring_ribbon(
+					tree, end_pos, 0.5, 3.1, 0.60,
+					Color(1,1,1,1), Color(0.0, 0.95, 1.0, 1), Color(1.0, 0.15, 0.75, 1), Color(1.0, 0.88, 0.15, 1),
+					16.0, 0.36
+				)
+				_spawn_kenney_star_flare_burst(
+					tree, end_pos + Vector3(0.0, 0.65, 0.0), 3.0,
+					Color(1.0, 0.9, 0.3, 1.0), Color(0.85, 0.2, 1.0, 1.0), 0.28
+				)
+				wave_root.queue_free()
+		)
 
 	return wave_root
 
-## Chiêu 3: Tuyệt chiêu Q — Song Long Lốc Xoáy 360° (Task 20.4 Chiêu Q)
+## Chiêu 3: Tuyệt chiêu Q — Song Long Lốc Xoáy 360° (Task 20.4 Chiêu Q & Directive 26)
 static func spawn_whirlwind_360_vfx(
 	hero_node: Node3D,
-	parent_node: Node = null
+	arg2 = null,
+	arg3 = null
 ) -> void:
 	if not is_instance_valid(hero_node):
 		return
+	var parent_node: Node = null
+	var is_rage: bool = false
+	if arg2 is bool:
+		is_rage = arg2
+		parent_node = arg3 as Node
+	elif arg2 is Node:
+		parent_node = arg2
+		if arg3 is bool:
+			is_rage = arg3
+
 	var p := _get_root_parent(parent_node)
 	if p == null:
 		return
@@ -1253,7 +1961,9 @@ static func spawn_whirlwind_360_vfx(
 	hero_node.add_child(vortex_root)
 	vortex_root.position = Vector3(0.0, 0.85, 0.0)
 
-	# --- VÒNG 1: Xanh Băng Điện Tử – Lõi Trắng – Viền Cam (Nghiêng +14 độ) ---
+	var scale_mult := 1.30 if is_rage else 1.0
+
+	# --- VÒNG 1: Đỏ Huyết nếu Nộ / Xanh Băng nếu thường ---
 	var ring1_pivot := Node3D.new()
 	ring1_pivot.name = "WhirlwindRing1Pivot"
 	ring1_pivot.rotation.x = deg_to_rad(14.0)
@@ -1261,82 +1971,85 @@ static func spawn_whirlwind_360_vfx(
 
 	var ring1_mesh := MeshInstance3D.new()
 	ring1_mesh.name = "WhirlwindArc1"
-	ring1_mesh.mesh = build_curved_slash_arc_mesh(1.1, 3.1, 340.0, 36, 0.25)
+	ring1_mesh.mesh = build_curved_slash_arc_mesh(1.1 * scale_mult, 3.1 * scale_mult, 340.0, 36, 0.25)
 	ring1_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 	var smat1 := ShaderMaterial.new()
 	smat1.shader = _get_slash_shader()
 	smat1.set_shader_parameter("slash_mask_tex", _get_tex("slash_01.png"))
 	smat1.set_shader_parameter("core_color", Color(1.0, 1.0, 1.0, 1.0))
-	smat1.set_shader_parameter("main_color", Color(0.0, 0.85, 1.0, 1.0)) # Xanh Băng Cyan
-	smat1.set_shader_parameter("edge_color", Color(1.0, 0.45, 0.05, 1.0)) # Viền Cam Lửa
-	smat1.set_shader_parameter("emission_boost", 4.2)
+	smat1.set_shader_parameter("main_color", Color(1.0, 0.04, 0.14, 1.0) if is_rage else Color(0.0, 0.85, 1.0, 1.0))
+	smat1.set_shader_parameter("edge_color", Color(0.70, 0.0, 0.08, 1.0) if is_rage else Color(1.0, 0.45, 0.05, 1.0))
+	smat1.set_shader_parameter("emission_boost", 5.5 if is_rage else 4.2)
+	smat1.set_shader_parameter("core_sharpness", 2.2 if is_rage else 1.65)
 	smat1.set_shader_parameter("progress", 0.1)
 	ring1_mesh.material_override = smat1
 	ring1_pivot.add_child(ring1_mesh)
 
-	# --- VÒNG 2: Cam Lửa Hoàng Kim – Lõi Trắng – Viền Đỏ (Nghiêng -14 độ, lệch pha 180 độ) ---
+	# --- VÒNG 2: Xanh Dương nếu Nộ / Cam Lửa nếu thường ---
 	var ring2_pivot := Node3D.new()
 	ring2_pivot.name = "WhirlwindRing2Pivot"
 	ring2_pivot.rotation.x = deg_to_rad(-14.0)
-	ring2_pivot.rotation.y = PI # Lệch pha 180 độ
+	ring2_pivot.rotation.y = PI
 	vortex_root.add_child(ring2_pivot)
 
 	var ring2_mesh := MeshInstance3D.new()
 	ring2_mesh.name = "WhirlwindArc2"
-	ring2_mesh.mesh = build_curved_slash_arc_mesh(1.1, 3.1, 340.0, 36, -0.25)
+	ring2_mesh.mesh = build_curved_slash_arc_mesh(1.1 * scale_mult, 3.1 * scale_mult, 340.0, 36, -0.25)
 	ring2_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 	var smat2 := ShaderMaterial.new()
 	smat2.shader = _get_slash_shader()
 	smat2.set_shader_parameter("slash_mask_tex", _get_tex("slash_01.png"))
 	smat2.set_shader_parameter("core_color", Color(1.0, 0.96, 0.84, 1.0))
-	smat2.set_shader_parameter("main_color", Color(1.0, 0.53, 0.0, 1.0)) # Cam Lửa Hoàng Kim
-	smat2.set_shader_parameter("edge_color", Color(0.90, 0.12, 0.16, 1.0)) # Viền Đỏ Huyết
-	smat2.set_shader_parameter("emission_boost", 4.2)
+	smat2.set_shader_parameter("main_color", Color(0.0, 0.42, 1.0, 1.0) if is_rage else Color(1.0, 0.53, 0.0, 1.0))
+	smat2.set_shader_parameter("edge_color", Color(0.0, 0.15, 0.80, 1.0) if is_rage else Color(0.90, 0.12, 0.16, 1.0))
+	smat2.set_shader_parameter("emission_boost", 5.5 if is_rage else 4.2)
+	smat2.set_shader_parameter("core_sharpness", 2.2 if is_rage else 1.65)
 	smat2.set_shader_parameter("progress", 0.1)
 	ring2_mesh.material_override = smat2
 	ring2_pivot.add_child(ring2_mesh)
 
-	# --- Trận Pháp Kép Dưới Chân (circle_05 Xanh Cyan & twirl_03 Vàng Cam) ---
+	# --- Trận Pháp Kép Dưới Chân ---
 	var decal1 := Decal.new()
 	decal1.name = "WhirlwindDecal1"
 	decal1.position = Vector3(0.0, -0.75, 0.0)
-	decal1.size = Vector3(5.8, 2.5, 5.8)
+	decal1.size = Vector3(6.5 * scale_mult, 2.5, 6.5 * scale_mult)
 	decal1.texture_albedo = _get_tex("circle_05.png")
-	decal1.modulate = Color(0.0, 0.8, 1.0, 0.8)
+	decal1.modulate = Color(1.0, 0.08, 0.2, 0.85) if is_rage else Color(0.0, 0.8, 1.0, 0.8)
 	vortex_root.add_child(decal1)
 
 	var decal2 := Decal.new()
 	decal2.name = "WhirlwindDecal2"
 	decal2.position = Vector3(0.0, -0.72, 0.0)
-	decal2.size = Vector3(5.2, 2.5, 5.2)
+	decal2.size = Vector3(5.8 * scale_mult, 2.5, 5.8 * scale_mult)
 	decal2.texture_albedo = _get_tex("twirl_03.png")
-	decal2.modulate = Color(1.0, 0.6, 0.1, 0.8)
+	decal2.modulate = Color(0.0, 0.45, 1.0, 0.85) if is_rage else Color(1.0, 0.6, 0.1, 0.8)
 	vortex_root.add_child(decal2)
 
-	# Luồng hạt tia lửa xoáy từ chân lên đầu (spark_01)
+	# Luồng hạt tia lửa xoáy từ chân lên đầu
 	var vortex_sparks := GPUParticles3D.new()
 	vortex_sparks.name = "WhirlwindSparks"
-	vortex_sparks.amount = 30
-	vortex_sparks.lifetime = 0.35
+	vortex_sparks.amount = 40 if is_rage else 30
+	vortex_sparks.lifetime = 0.38 if is_rage else 0.35
 	vortex_sparks.local_coords = false
 
 	var pmat := ParticleProcessMaterial.new()
 	pmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
 	pmat.emission_ring_axis = Vector3(0, 1, 0)
-	pmat.emission_ring_radius = 2.4
+	pmat.emission_ring_radius = 2.4 * scale_mult
 	pmat.emission_ring_inner_radius = 1.0
 	pmat.direction = Vector3(0, 1, 0)
 	pmat.spread = 35.0
 	pmat.initial_velocity_min = 3.5
-	pmat.initial_velocity_max = 7.0
+	pmat.initial_velocity_max = 7.5
 	pmat.gravity = Vector3(0, 2.0, 0)
 	pmat.scale_min = 0.25
 	pmat.scale_max = 0.55
+	pmat.color_ramp = _get_rage_crimson_cobalt_ramp() if is_rage else _get_prismatic_color_ramp()
 	vortex_sparks.process_material = pmat
 
-	var draw_mat := _create_additive_particle_mat(_get_tex("spark_01.png"), Color(1.0, 0.8, 0.3, 1.0))
+	var draw_mat := _create_additive_particle_mat(_get_tex("spark_01.png"), Color(1.0, 0.4, 0.5, 1.0) if is_rage else Color(1.0, 0.8, 0.3, 1.0))
 	var qmesh := get_safe_particle_quad_mesh(Vector2(0.45, 0.45))
 	qmesh.surface_set_material(0, draw_mat)
 	vortex_sparks.draw_pass_1 = qmesh
@@ -1360,11 +2073,12 @@ static func spawn_whirlwind_360_vfx(
 
 	tw.chain().tween_callback(vortex_root.queue_free)
 
-## Chiêu 4: Bom Khói 3D phím E — Vùng Khói Lôi Vụ (Task 21.1)
+## Chiêu 4: Bom Khói 3D phím E — Vùng Khói Lôi Vụ (Task 21.1 & Directive 26 Bom Huyết Lôi)
 static func spawn_smoke_bomb_hazard_zone(
 	parent_node: Node,
 	start_pos: Vector3,
-	target_pos: Vector3
+	target_pos: Vector3,
+	is_rage: bool = false
 ) -> Node3D:
 	var p := _get_root_parent(parent_node)
 	if p == null:
@@ -1385,11 +2099,11 @@ static func spawn_smoke_bomb_hazard_zone(
 	p.add_child(proj)
 	proj.global_position = start_pos
 
-	# Đuôi sáng màu Tím Ngọc (magic_03)
+	# Đuôi sáng màu Đỏ-Xanh nếu Nộ / Tím Ngọc nếu thường
 	var trail := GPUParticles3D.new()
 	trail.name = "BombTrail"
-	trail.amount = 16
-	trail.lifetime = 0.22
+	trail.amount = 18 if is_rage else 16
+	trail.lifetime = 0.24 if is_rage else 0.22
 	trail.local_coords = false
 
 	var tpmat := ParticleProcessMaterial.new()
@@ -1402,7 +2116,7 @@ static func spawn_smoke_bomb_hazard_zone(
 	tpmat.scale_max = 0.35
 	trail.process_material = tpmat
 
-	var tmat := _create_additive_particle_mat(_get_tex("magic_03.png"), Color(0.7, 0.3, 1.0, 0.9))
+	var tmat := _create_additive_particle_mat(_get_tex("magic_03.png"), Color(1.0, 0.15, 0.30, 0.9) if is_rage else Color(0.7, 0.3, 1.0, 0.9))
 	var qmesh := get_safe_particle_quad_mesh(Vector2(0.35, 0.35))
 	qmesh.surface_set_material(0, tmat)
 	trail.draw_pass_1 = qmesh
@@ -1418,7 +2132,7 @@ static func spawn_smoke_bomb_hazard_zone(
 	tween.tween_property(proj, "global_position", mid_pos, fly_time * 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tween.tween_property(proj, "global_position", target_pos, fly_time * 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tween.tween_callback(func():
-		_detonate_smoke_hazard_zone(p, target_pos)
+		_detonate_smoke_hazard_zone(p, target_pos, is_rage)
 		proj.queue_free()
 	)
 	return proj
@@ -1426,13 +2140,17 @@ static func spawn_smoke_bomb_hazard_zone(
 static func spawn_smoke_bomb_3d(
 	parent_node: Node,
 	start_pos: Vector3,
-	target_pos: Vector3
+	target_pos: Vector3,
+	is_rage: bool = false
 ) -> void:
-	spawn_smoke_bomb_hazard_zone(parent_node, start_pos, target_pos)
+	spawn_smoke_bomb_hazard_zone(parent_node, start_pos, target_pos, is_rage)
 
-## Kích nổ 4 lớp liên hoàn + Vùng Khói Lôi Vụ DoT & Slow (Task 21.1)
-static func _detonate_smoke_hazard_zone(parent: Node, pos: Vector3) -> void:
-	# 1. Sát thương nổ tức thì 20.0 DMG cho các Bot trong bán kính 3.2m
+## Kích nổ 4 lớp liên hoàn + Vùng Khói Lôi Vụ DoT & Slow (Task 21.1 & Task 26.2 Bom Huyết Lôi)
+static func _detonate_smoke_hazard_zone(parent: Node, pos: Vector3, is_rage: bool = false) -> void:
+	var burst_dmg := 30.0 if is_rage else 20.0
+	var dot_dmg := 12.0 if is_rage else 8.0
+
+	# 1. Sát thương nổ tức thì cho các Bot trong bán kính 3.2m
 	var tree := parent.get_tree()
 	if tree != null:
 		var enemies := tree.get_nodes_in_group("enemies")
@@ -1444,15 +2162,15 @@ static func _detonate_smoke_hazard_zone(parent: Node, pos: Vector3) -> void:
 				if flat_dist <= 3.2 and y_diff <= 1.8:
 					if bot.has_method("take_damage"):
 						var kb: Vector3 = (b_node.global_position - pos).normalized()
-						bot.take_damage(20.0, kb)
+						bot.take_damage(burst_dmg, kb)
 					elif bot.has_method("take_dot_damage"):
-						bot.take_dot_damage(20.0, Color(0.85, 0.35, 1.0))
+						bot.take_dot_damage(burst_dmg, Color(1.0, 0.15, 0.3) if is_rage else Color(0.85, 0.35, 1.0))
 
-	# 2. Lớp chớp sáng tâm nổ (Sprite3D light_02 + OmniLight3D tím điện)
+	# 2. Lớp chớp sáng tâm nổ
 	var flash_sprite := Sprite3D.new()
 	flash_sprite.name = "SmokeDetonationFlash"
 	flash_sprite.texture = _get_tex("light_02.png")
-	flash_sprite.modulate = Color(0.85, 0.35, 1.0, 1.0)
+	flash_sprite.modulate = Color(1.0, 0.10, 0.25, 1.0) if is_rage else Color(0.85, 0.35, 1.0, 1.0)
 	flash_sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	flash_sprite.no_depth_test = true
 	flash_sprite.pixel_size = 0.012
@@ -1460,14 +2178,14 @@ static func _detonate_smoke_hazard_zone(parent: Node, pos: Vector3) -> void:
 	flash_sprite.global_position = pos + Vector3(0.0, 0.8, 0.0)
 
 	var light := OmniLight3D.new()
-	light.light_color = Color(0.8, 0.3, 1.0)
-	light.light_energy = 4.5
-	light.omni_range = 5.5
+	light.light_color = Color(1.0, 0.15, 0.30) if is_rage else Color(0.8, 0.3, 1.0)
+	light.light_energy = 5.5 if is_rage else 4.5
+	light.omni_range = 6.2 if is_rage else 5.5
 	parent.add_child(light)
 	light.global_position = pos + Vector3(0.0, 0.8, 0.0)
 
 	var tw_flash := flash_sprite.create_tween().set_parallel(true)
-	tw_flash.tween_property(flash_sprite, "scale", Vector3(2.5, 2.5, 2.5), 0.35)
+	tw_flash.tween_property(flash_sprite, "scale", Vector3(2.8, 2.8, 2.8) if is_rage else Vector3(2.5, 2.5, 2.5), 0.35)
 	tw_flash.tween_property(flash_sprite, "modulate:a", 0.0, 0.35)
 	tw_flash.tween_property(light, "light_energy", 0.0, 0.35)
 	tw_flash.chain().tween_callback(flash_sprite.queue_free)
@@ -1479,19 +2197,19 @@ static func _detonate_smoke_hazard_zone(parent: Node, pos: Vector3) -> void:
 	parent.add_child(hazard_root)
 	hazard_root.global_position = pos
 
-	# Decal cổ ngữ circle_04 + scorch_03 màu tím điện ôm sàn 3.2m (size = 6.4m)
+	# Decal cổ ngữ
 	var ground_decal := Decal.new()
 	ground_decal.name = "SmokeRuneDecal"
 	ground_decal.size = Vector3(6.4, 3.0, 6.4)
 	ground_decal.texture_albedo = _get_tex("circle_04.png")
-	ground_decal.modulate = Color(0.65, 0.25, 1.0, 0.85)
+	ground_decal.modulate = Color(1.0, 0.08, 0.20, 0.88) if is_rage else Color(0.65, 0.25, 1.0, 0.85)
 	hazard_root.add_child(ground_decal)
 	ground_decal.position = Vector3(0.0, 0.15, 0.0)
 
-	# Khói tím ma thuật (smoke_04)
+	# Khói
 	var smoke := GPUParticles3D.new()
 	smoke.name = "SmokeCloudZone"
-	smoke.amount = 32
+	smoke.amount = 36 if is_rage else 32
 	smoke.lifetime = 2.0
 	smoke.explosiveness = 0.75
 	smoke.local_coords = false
@@ -1510,7 +2228,7 @@ static func _detonate_smoke_hazard_zone(parent: Node, pos: Vector3) -> void:
 	spmat.scale_max = 1.8
 	smoke.process_material = spmat
 
-	var smat := _create_additive_particle_mat(_get_tex("smoke_04.png"), Color(0.42, 0.15, 0.55, 0.75))
+	var smat := _create_additive_particle_mat(_get_tex("smoke_04.png"), Color(0.60, 0.04, 0.12, 0.75) if is_rage else Color(0.42, 0.15, 0.55, 0.75))
 	var qmesh := get_safe_particle_quad_mesh(Vector2(1.2, 1.2))
 	qmesh.surface_set_material(0, smat)
 	smoke.draw_pass_1 = qmesh
@@ -1518,10 +2236,10 @@ static func _detonate_smoke_hazard_zone(parent: Node, pos: Vector3) -> void:
 	smoke.position = Vector3(0.0, 0.5, 0.0)
 	smoke.emitting = true
 
-	# Tia sét giật trong khói (spark_06)
+	# Tia sét giật trong khói
 	var thunder := GPUParticles3D.new()
 	thunder.name = "SmokeThunderSparks"
-	thunder.amount = 24
+	thunder.amount = 28 if is_rage else 24
 	thunder.lifetime = 0.35
 	thunder.local_coords = false
 
@@ -1536,7 +2254,7 @@ static func _detonate_smoke_hazard_zone(parent: Node, pos: Vector3) -> void:
 	th_pmat.scale_max = 0.55
 	thunder.process_material = th_pmat
 
-	var th_mat := _create_additive_particle_mat(_get_tex("spark_06.png"), Color(0.7, 0.5, 1.0, 1.0))
+	var th_mat := _create_additive_particle_mat(_get_tex("spark_06.png"), Color(0.0, 0.55, 1.0, 1.0) if is_rage else Color(0.7, 0.5, 1.0, 1.0))
 	var th_mesh := get_safe_particle_quad_mesh(Vector2(0.5, 0.5))
 	th_mesh.surface_set_material(0, th_mat)
 	thunder.draw_pass_1 = th_mesh
@@ -1544,7 +2262,7 @@ static func _detonate_smoke_hazard_zone(parent: Node, pos: Vector3) -> void:
 	thunder.position = Vector3(0.0, 0.8, 0.0)
 	thunder.emitting = true
 
-	# Vòng lặp 8 nhịp (mỗi 0.5s trong 4.0s) gây 8 HP DoT và làm chậm 55%
+	# Vòng lặp 8 nhịp (mỗi 0.5s trong 4.0s)
 	var zone_tween := hazard_root.create_tween()
 	for tick in range(8):
 		zone_tween.tween_interval(0.5)
@@ -1563,9 +2281,9 @@ static func _detonate_smoke_hazard_zone(parent: Node, pos: Vector3) -> void:
 				var y_d := absf(b_pos.y - pos.y)
 				if flat_d <= 3.2 and y_d <= 1.8:
 					if bot.has_method("take_dot_damage"):
-						bot.take_dot_damage(8.0, Color(0.75, 0.35, 1.0))
+						bot.take_dot_damage(dot_dmg, Color(1.0, 0.15, 0.3) if is_rage else Color(0.75, 0.35, 1.0))
 					elif bot.has_method("take_damage"):
-						bot.take_damage(8.0)
+						bot.take_damage(dot_dmg)
 					if bot.has_method("apply_slow_debuff"):
 						bot.apply_slow_debuff(0.45, 1.0)
 		)

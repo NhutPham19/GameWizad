@@ -392,6 +392,40 @@
   - Xuất báo cáo nghiệm thu [PHASE_25_PRISMATIC_VFX_OVERHAUL_QA_REPORT.md](file:///e:/DoAnCaNhan/ThuVienGame/GameWizad/docs/QA_REPORTS/PHASE_25_PRISMATIC_VFX_OVERHAUL_QA_REPORT.md) và báo cáo tiến độ [BAO_CAO_TIEN_DO_DU_AN_GAMEWIZAD.md](file:///e:/DoAnCaNhan/ThuVienGame/GameWizad/docs/BAO_CAO_TIEN_DO_DU_AN_GAMEWIZAD.md).
   - Commit và push sạch sẽ lên kho lưu trữ GitHub `https://github.com/NhutPham19/GameWizad` (`main`).
 
+---
+
+## 📌 GIAI ĐOẠN 26: TRẠNG THÁI THỨ 2 KÍCH HOẠT NỘ (PHÍM [R] 10S/6S), ĐỔI PHÍM CHƠI LẠI SANG [F1] & ĐẠI TU HIỆU ỨNG ĐỎ - XANH DƯƠNG ĐỌNG LẠI, PHÌNH TO UY LỰC (CHỈ ĐẠO 26) (HOÀN THÀNH 100% ✅)
+
+- [x] **TASK 26.1: Chuyển Phím "Chơi Lại" Từ [R] Sang [F1] & Giải Phóng Phím [R] Cho Kích Hoạt Nộ** (PASS)
+  - Cập nhật nhãn nút Restart trên HUD thành `"🔄 CHƠI LẠI (Phím F1)"`.
+  - Thay thế toàn bộ mã bắt phím reload từ `KEY_R` sang `KEY_F1` (`Input.is_physical_key_pressed(KEY_F1)` và `_unhandled_input`).
+  - Giải phóng phím vật lý `KEY_R` độc quyền cho cơ chế Hóa Nộ.
+- [x] **TASK 26.2: Xây Dựng Hệ Thống Trạng Thái Thứ 2 — "Huyết Lam Cuồng Nộ" Khi Nhấn Phím [R]** (PASS)
+  - Thông số: Duy trì đúng 10.0s (`RAGE_ACTIVE_DURATION`), hồi chiêu 6.0s (`COOLDOWN_RAGE_R`), tăng +45% sát thương toàn bộ chiêu thức, +15% tốc độ di chuyển và tốc độ vung kiếm.
+  - Zero Cast-Lock: Bật Nộ mượt mà giữa lúc đang di chuyển hoặc tung combo.
+  - Vụ nổ thức tỉnh `spawn_rage_awakening_burst`: Gây 15.0 DMG xung kích, đẩy lùi 2.4m, bung 2 vòng xoáy lụa Đỏ-Xanh và 2 cột lốc 3.8m.
+  - Gắn hào quang duy trì `RageState2AuraHolder` suốt 10 giây (2 đĩa xoay ma pháp dưới chân `circle_04` Đỏ & `circle_02` Xanh + 2 dải lụa xoay tròn quanh người + 18 hạt tia lửa bốc lên). Tự động `queue_free()` sạch sẽ khi hết Nộ.
+  - Hiển thị nổi bật trên HUD Cooldown Bar: `🔥 [R] HUYẾT LAM NỘ: %.1fs (ĐANG BẬT)`.
+- [x] **TASK 26.3: Nâng Cấp Shader `vfx_stylized_slash.gdshader` (Chống Bệt Mảng & Đọng Lại)** (PASS)
+  - Bổ sung `core_sharpness = 2.2` (thu gọn lõi trắng xuống 15%, 85% thân kiếm sắc lẹm Đỏ Huyết `#FF0824` và Xanh Dương `#0055FF`) và `hold_power = 0.35` (giữ sáng lâu trước khi rút dần).
+  - Tách lớp không gian (Spatial Staggering) hoàn toàn, không đè khít các lưỡi kiếm lên cùng một bán kính.
+- [x] **TASK 26.4: Chi Tiết Hiệu Ứng Trạng Thái 2 Trong `KayKitVFXManager` (Cơ Chế Đọng Lại & Phình To)** (PASS)
+  - Bổ sung `_get_rage_crimson_cobalt_ramp()` (GradientTexture1D Trắng Nóng -> Đỏ Huyết -> Xanh Lam -> Băng).
+  - Áp dụng `_animate_lingering_power_slash`: Quét nhanh 24% -> Đọng lại & nở to 1.25x - 1.28x suốt 46% -> Tan rã 30%.
+  - Đòn [U] Nhịp 1 & 2 Nộ: Song kiếm phân cực Đỏ-Xanh tách 2 tầng bán kính ($R=2.15\text{m}$ & $2.78\text{m}$), đọng lại 0.48s, gây 36.0 DMG.
+  - Đòn [U] Nhịp 3 (U3 Nộ): "Huyết Lam Long Thần Giáng" gồm 5 Đại Kiếm Khí Xếp Quạt ($0^\circ, \pm 18^\circ, \pm 36^\circ$), ghim đọng lại trên mặt đất 0.58s nở to 1.28x + 3 vòng lụa xoáy phân tầng + 4 cột xoáy cao 4.2m + 2 decal nứt đất đọng 1.1s + 56 hạt phun trào, gây 52.0 DMG.
+  - Chiêu [I] Nộ: Pha 1 sinh 4 tàn ảnh .glb KayKit Đỏ-Xanh + 6 Đại Kiếm Khí Chữ X tách 3 tầng bán kính đọng 0.54s (36.0 DMG); Pha 2 phóng Đại Sóng Kiếm Khí 5 Cánh "Ngũ Dực Huyết Lam" càn quét xa 6.2m, đọng lại cuối đường 0.35s nở to 1.35x rồi nổ Đại Tinh Vân Đỏ-Xanh (44.0 DMG, tổng 80.0 DMG).
+  - Chiêu [O] Q Nộ: 4 dải lụa Đỏ-Xanh nở to 1.30x, hút 4.3m, 26.0 DMG.
+  - Chiêu [P] E Nộ: Bom Huyết Lôi nổ 30.0 DMG, khói đỏ tia sét lam giật 12.0 DMG/nhịp.
+- [x] **TASK 26.5: Kiểm Thử Tự Động 100% PASS, Tiền Nạp Shader & Minh Chứng RTX 4060** (PASS)
+  - Cập nhật `ShaderPrewarmer` tiền nạp `_get_rage_crimson_cobalt_ramp()` giữ vững 165Hz+ mượt mà.
+  - Kịch bản kiểm thử [`test_phase_26_rage_state_and_lingering_red_blue_vfx.gd`](file:///e:/DoAnCaNhan/ThuVienGame/GameWizad/src_game/tests/test_phase_26_rage_state_and_lingering_red_blue_vfx.gd) PASS 5/5 bài kiểm tra (F1 Restart, Vòng đời [R] 10s/6s, U3 52 DMG đọng lại 0.38s scale 1.34x, I 80 DMG sóng 5 cánh 6.2m, 0% PrimitiveMesh).
+  - Kịch bản kiểm thử hồi quy `test_phase_25_prismatic_vfx_overhaul.gd` (4/4 PASS) và `test_phase_24_dash_cd_and_bulletproof_stairs.gd` (3/3 PASS) đạt 100% PASS.
+  - Chụp ảnh minh chứng GPU thực tế NVIDIA GeForce RTX 4060 Laptop GPU: `docs/QA_REPORTS/screenshots/phase26_1_rage_mode_u3_five_blades.png` và `phase26_2_rage_mode_i_hexa_x_and_five_winged_wave.png`.
+  - Xuất báo cáo nghiệm thu [PHASE_26_RAGE_STATE_AND_RED_BLUE_VFX_QA_REPORT.md](file:///e:/DoAnCaNhan/ThuVienGame/GameWizad/docs/QA_REPORTS/PHASE_26_RAGE_STATE_AND_RED_BLUE_VFX_QA_REPORT.md).
+  - Đồng bộ toàn vẹn lên kho lưu trữ GitHub `https://github.com/NhutPham19/GameWizad` (`main`).
+
+
 
 
 

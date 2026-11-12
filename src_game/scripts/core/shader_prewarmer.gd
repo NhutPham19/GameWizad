@@ -41,8 +41,9 @@ static func prewarm(parent_node: Node) -> void:
 		parent_node.add_child(prewarmer)
 
 func _ready() -> void:
-	# Pre-cache Prismatic Color Ramp & Kenney Textures (Task 25.5)
+	# Pre-cache Prismatic Color Ramp, Rage Red-Blue Ramp & Kenney Textures (Task 25.5 & 26.5)
 	KayKitVFXManager._get_prismatic_color_ramp()
+	KayKitVFXManager._get_rage_crimson_cobalt_ramp()
 	for tex_path in KENNEY_TEXTURES_TO_PREWARM:
 		KayKitVFXManager._load_cached_tex(tex_path)
 
