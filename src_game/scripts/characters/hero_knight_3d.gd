@@ -668,12 +668,15 @@ func _physics_process(delta: float) -> void:
 					visual_root.rotation.y = _facing_angle
 			_play_anim(ANIM_RUN)
 
-			# Task 27.2: Âm thanh bước chân trên đá
+			# Task 29.3: Âm thanh bước chân trên đá (Tách biệt Thường vs Nộ)
 			if is_on_floor():
 				_footstep_timer -= delta
 				if _footstep_timer <= 0.0:
 					_footstep_timer = 0.22 if _is_rage_state_2 else 0.26
-					KayKitAudioDirector.play_sfx("footstep_stone", -10.0)
+					if _is_rage_state_2:
+						KayKitAudioDirector.play_sfx("footstep_stone", -4.0, 0.75)
+					else:
+						KayKitAudioDirector.play_sfx("footstep_stone", -8.0, 1.0)
 
 			# Task 27.1 Lớp 6: Tự động để lại tàn ảnh .glb Đỏ-Xanh khi chạy trong Nộ
 			if _is_rage_state_2 and is_on_floor() and visual_root:
@@ -1122,8 +1125,12 @@ func _do_spin_attack(aim_override: Vector3 = Vector3.ZERO) -> void:
 		return
 	_cd_q_timer = COOLDOWN_Q
 
-	# Task 27.2: Âm thanh lốc xoáy Q [O]
-	KayKitAudioDirector.play_sfx("o_whirlwind_spin")
+	# Task 29.3: Âm thanh lốc xoáy Q [O] (Thường vs Nộ)
+	if _is_rage_state_2:
+		KayKitAudioDirector.play_sfx("o_whirlwind_spin", 2.5, 0.76)
+		KayKitAudioDirector.play_sfx("u1_rage", 0.0, 0.85)
+	else:
+		KayKitAudioDirector.play_sfx("o_whirlwind_spin")
 
 	var aim_dir := aim_override if aim_override.length_squared() > 0.001 else _get_stable_aim_direction()
 	_snap_to_aim_direction(aim_dir, 0.45)
@@ -1152,8 +1159,11 @@ func _do_ranged_throw(target_pos_override: Vector3 = Vector3.ZERO) -> void:
 		return
 	_cd_e_timer = COOLDOWN_E
 
-	# Task 27.2: Âm thanh ném bom E [P]
-	KayKitAudioDirector.play_sfx("p_bomb_throw")
+	# Task 29.3: Âm thanh ném bom E [P] (Thường vs Nộ)
+	if _is_rage_state_2:
+		KayKitAudioDirector.play_sfx("p_bomb_throw", 2.0, 0.80)
+	else:
+		KayKitAudioDirector.play_sfx("p_bomb_throw")
 
 	var raw_cursor := target_pos_override if target_pos_override != Vector3.ZERO else _get_cursor_world_pos()
 	var aim_dir := _get_stable_aim_direction()
@@ -1185,8 +1195,12 @@ func _do_dodge() -> void:
 		return
 	_cd_dash_timer = COOLDOWN_DASH
 
-	# Task 27.2: Âm thanh lướt né Space
-	KayKitAudioDirector.play_sfx("dash_space")
+	# Task 29.3: Âm thanh lướt né Space (Thường vs Nộ)
+	if _is_rage_state_2:
+		KayKitAudioDirector.play_sfx("dash_space", 2.0, 0.78)
+		KayKitAudioDirector.play_sfx("i_phase2_wave_launch", -1.5, 0.82)
+	else:
+		KayKitAudioDirector.play_sfx("dash_space")
 
 	var dodge_dir := _get_movement_input_vector()
 	if dodge_dir.length_squared() < 0.01:
@@ -1209,8 +1223,11 @@ func _do_dodge() -> void:
 
 
 func _do_jump() -> void:
-	# Task 27.2: Âm thanh nhảy C
-	KayKitAudioDirector.play_sfx("jump_c")
+	# Task 29.3: Âm thanh nhảy C (Thường vs Nộ)
+	if _is_rage_state_2:
+		KayKitAudioDirector.play_sfx("jump_c", 1.5, 0.82)
+	else:
+		KayKitAudioDirector.play_sfx("jump_c")
 
 	velocity.y = JUMP_VELOCITY
 	_jump_state = 1

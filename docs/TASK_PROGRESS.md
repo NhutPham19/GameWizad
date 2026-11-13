@@ -451,6 +451,38 @@
   - Xuất báo cáo nghiệm thu [PHASE_28_REAL_FOLEY_AUDIO_OVERHAUL_QA_REPORT.md](file:///e:/DoAnCaNhan/ThuVienGame/GameWizad/docs/QA_REPORTS/PHASE_28_REAL_FOLEY_AUDIO_OVERHAUL_QA_REPORT.md).
   - Cập nhật `docs/CURRENT_CODE_SNAPSHOT.md` (127 files, 0.85 MB) và đồng bộ Git lên GitHub `https://github.com/NhutPham19/GameWizad` (`main`).
 
+---
+
+## 📌 GIAI ĐOẠN 29: XÓA SẠCH 100% SÓNG ÂM GIẢ TẠO, TÍCH HỢP 3 KHO ÂM THANH THẬT (`RPG` + `IMPACT` + `SCI-FI`), 4 AUDIO BUS DSP & TÁCH BIỆT TRẠNG THÁI 1 VS TRẠNG THÁI 2 NỘ [R] (HOÀN THÀNH 100% ✅)
+
+- [x] **TASK 29.1: Tải & Đồng Bộ Đủ 3 Bộ Âm Thanh Thật (`RPG`, `IMPACT`, `SCI-FI`) Vào `src_game/assets/audio/`** (PASS)
+  - Clone và đồng bộ 3 bộ âm thanh CC0 chính hãng Kenney vào `assets_staging/gamedev_resources/audio_sfx/`.
+  - Sao chép toàn bộ file vào `src_game/assets/audio/rpg` (204 files), `src_game/assets/audio/impact` (520 files) và `src_game/assets/audio/scifi` (74 files).
+  - Đảm bảo đầy đủ các file âm thanh năng lượng & địa chấn: `lowFrequency_explosion_000.ogg`, `explosionCrunch_000.ogg`, `thrusterFire_000.ogg`, `spaceEngineLarge_000.ogg`, `laserLarge_000.ogg`, `forceField_000.ogg`, `impactMetal_000.ogg`, `knifeSlice.ogg`, `impactPunch_heavy_000.ogg`.
+  - Chạy Godot Headless Import đăng ký 100% tài nguyên âm thanh mới vào ResourceLoader.
+
+- [x] **TASK 29.2: Viết Lại Hoàn Toàn `KayKitAudioDirector` (4 Bus DSP + Tách Biệt 100% Trạng Thái 1 & 2)** (PASS)
+  - Thiết lập kiến trúc 4 Audio Bus chuyên nghiệp trên AudioServer:
+    - `NormalBladeBus`: Dành cho Trạng Thái 1, tinh chỉnh EQ6 (tăng đầm 100Hz, tăng bén 3200Hz, giảm chói 10000Hz) + Reverb nhẹ + Compressor.
+    - `RageOverdriveBus`: Dành cho Trạng Thái 2 [R], tích hợp Sub-Bass Boost (+7.0 dB ở 100Hz, +6.5 dB ở 32Hz), Tube Overdrive Distortion (drive 0.24), 2-Voice Chorus (wet 0.28), Stereo Widener (pan_pullout 1.45) và Cathedral Reverb (room_size 0.65).
+    - `HeavyImpactBus`: Chuyên trách Nổ Địa Chấn U3, Sóng Kiếm [I], Bom [P] & Thức Tỉnh [R] (EQ6 tăng lực chấn 7.5 dB ở 32Hz + Reverb + Compressor).
+    - `RageAuraBus`: Âm thanh Hào Quang Nộ rền vang suốt 10s khi bật [R] với LowPassFilter 1800Hz và Chorus.
+  - Tách biệt 100% bộ mẫu âm thanh giữa Trạng thái 1 (thanh thoát, bén ngót) và Trạng thái 2 (trầm hùng, bộc phá năng lượng).
+  - Thiết kế 3 Pha Âm Thanh Đọng Lại (Lingering Audio Tail) cho U3 (`u3_rage_dragon_fall`) và I (`i_rage_hexa_cleave`, `i_rage_five_wing_wave`).
+  - Audio Pool 32 kênh đa luồng không trễ ở 165Hz+, 0% sóng bíp giả tạo.
+
+- [x] **TASK 29.3: Dọn Sạch Sóng Âm Giả Trong `SynthAudio` & Nâng Cấp Âm Thanh Theo Trạng Thái Trong `HeroKnight3D`** (PASS)
+  - `synth_audio.gd`: Loại bỏ 100% sóng âm tự tạo, nạp trực tiếp file âm thanh thật từ Kenney RPG, Impact, Sci-Fi.
+  - `hero_knight_3d.gd`: Tách biệt âm thanh theo trạng thái thường vs Nộ [R] cho Lướt né [Space] (`dash_space` + `i_phase2_wave_launch`), Xoay 360° [O] (`o_whirlwind_spin` + `u1_rage`), Ném bom [P] (`p_bomb_throw`), Nhảy [C] (`jump_c`) và bước chân (`footstep_stone`).
+
+- [x] **TASK 29.4: Kiểm Thử Tự Động 100% PASS, Báo Cáo Nghiệm Thu & Đồng Bộ GitHub** (PASS)
+  - Viết và chạy kịch bản kiểm thử [`test_phase_29_ultimate_studio_audio_and_dual_state_sfx.gd`](file:///e:/DoAnCaNhan/ThuVienGame/GameWizad/src_game/tests/test_phase_29_ultimate_studio_audio_and_dual_state_sfx.gd) PASS 100% cả 4 bài kiểm tra:
+    - Test 29.1: Đã nạp thành công 51 luồng âm thanh thật vào RAM (>= 38), đủ 8/8 tệp âm thanh cốt lõi, 0% `_synth_*` / `encode_s16`.
+    - Test 29.2: Đủ 4 Audio Bus DSP trên AudioServer, RageOverdriveBus đủ 5 hiệu ứng phòng thu, Audio Pool đạt 32 kênh.
+    - Test 29.3: 100% chiêu thức Trạng Thái 1 định tuyến NormalBladeBus, Trạng Thái 2 định tuyến RageOverdriveBus & HeavyImpactBus, U3 đủ 3 pha âm thanh đọng lại.
+    - Test 29.4: `PrimitiveMesh == 0` (0% khối thô), hiệp sĩ Knight và cơ chế vật lý bảo toàn 100%.
+  - Chạy lại kiểm thử hồi quy `test_phase_27_rage_aura_6layers_and_audio_system.gd` PASS 100%.
+
 
 - [x] **TASK 26.1: Chuyển Phím "Chơi Lại" Từ [R] Sang [F1] & Giải Phóng Phím [R] Cho Kích Hoạt Nộ** (PASS)
   - Cập nhật nhãn nút Restart trên HUD thành `"🔄 CHƠI LẠI (Phím F1)"`.

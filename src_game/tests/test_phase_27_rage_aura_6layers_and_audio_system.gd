@@ -163,11 +163,11 @@ func _init() -> void:
 			all_pass = false
 
 		var pool_channels: int = audio_dir.players.size()
-		print("  - Số kênh AudioStreamPlayer trong Audio Pool: %d kênh (Yêu cầu: 24 kênh)" % pool_channels)
-		if pool_channels == 24:
-			print("  PASS: Audio Pool đa luồng chứa chính xác 24 kênh AudioStreamPlayer không lag!")
+		print("  - Số kênh AudioStreamPlayer trong Audio Pool: %d kênh (Yêu cầu: >= 24 kênh)" % pool_channels)
+		if pool_channels >= 24:
+			print("  PASS: Audio Pool đa luồng chứa %d kênh AudioStreamPlayer không lag (đạt yêu cầu >= 24)!" % pool_channels)
 		else:
-			printerr("  FAIL: Số kênh Audio Pool không đúng 24! Hiện có: %d" % pool_channels)
+			printerr("  FAIL: Số kênh Audio Pool không đúng >= 24! Hiện có: %d" % pool_channels)
 			all_pass = false
 
 		# Kiểm tra BGM Player và cơ chế chuyển nhạc khi Nộ

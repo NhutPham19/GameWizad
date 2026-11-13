@@ -2,9 +2,9 @@ class_name SynthAudio
 extends Node
 
 # ==============================================================================
-# SYNTH AUDIO (PURGED - DIRECTIVE 28)
-# - TUYỆT ĐỐI 0% SÓNG SIN TỰ CHẾ, 0% ENCODE_S16, 0% NOISE
-# - NẠP TRỰC TIẾP FILE ÂM THANH THẬT TỪ KENNEY RPG & IMPACT & INTERFACE PACKS
+# SYNTH AUDIO (PURGED - DIRECTIVE 29)
+# - TUYỆT ĐỐI 0% SÓNG ÂM TỰ CHẾ, 0% NOISE
+# - NẠP TRỰC TIẾP FILE ÂM THANH THẬT TỪ KENNEY RPG & IMPACT & SCI-FI PACKS
 # - TÍCH HỢP LIÊN THÔNG VỚI KAYKIT AUDIO DIRECTOR
 # ==============================================================================
 
@@ -74,27 +74,33 @@ func _prebake_cache() -> void:
 	elif ResourceLoader.exists("res://assets/audio/dash.wav"):
 		_audio_cache["dash"] = ResourceLoader.load("res://assets/audio/dash.wav")
 
-	var p_exp = "res://assets/audio/impact/impactSoft_heavy_000.ogg"
+	var p_exp = "res://assets/audio/scifi/explosionCrunch_000.ogg"
 	if ResourceLoader.exists(p_exp):
 		_audio_cache["explosion"] = ResourceLoader.load(p_exp)
+	elif ResourceLoader.exists("res://assets/audio/impact/impactSoft_heavy_000.ogg"):
+		_audio_cache["explosion"] = ResourceLoader.load("res://assets/audio/impact/impactSoft_heavy_000.ogg")
 	elif ResourceLoader.exists("res://assets/audio/hit.wav"):
 		_audio_cache["explosion"] = ResourceLoader.load("res://assets/audio/hit.wav")
 
-	var p_light = "res://assets/audio/impact/impactMetal_heavy_000.ogg"
+	var p_light = "res://assets/audio/scifi/laserLarge_000.ogg"
 	if ResourceLoader.exists(p_light):
 		_audio_cache["lightning"] = ResourceLoader.load(p_light)
+	elif ResourceLoader.exists("res://assets/audio/impact/impactMetal_heavy_000.ogg"):
+		_audio_cache["lightning"] = ResourceLoader.load("res://assets/audio/impact/impactMetal_heavy_000.ogg")
 
-	var p_crys = "res://assets/audio/ui/glass_004.wav"
+	var p_crys = "res://assets/audio/pickup_crystal.wav"
 	if ResourceLoader.exists(p_crys):
 		_audio_cache["pickup_crystal"] = ResourceLoader.load(p_crys)
+	elif ResourceLoader.exists("res://assets/audio/ui/glass_004.wav"):
+		_audio_cache["pickup_crystal"] = ResourceLoader.load("res://assets/audio/ui/glass_004.wav")
 	elif ResourceLoader.exists("res://assets/audio/crystal.wav"):
 		_audio_cache["pickup_crystal"] = ResourceLoader.load("res://assets/audio/crystal.wav")
 
-	var p_hp = "res://assets/audio/ui/bong_001.wav"
+	var p_hp = "res://assets/audio/pickup_health.wav"
 	if ResourceLoader.exists(p_hp):
 		_audio_cache["pickup_health"] = ResourceLoader.load(p_hp)
-	elif ResourceLoader.exists("res://assets/audio/pickup_health.wav"):
-		_audio_cache["pickup_health"] = ResourceLoader.load("res://assets/audio/pickup_health.wav")
+	elif ResourceLoader.exists("res://assets/audio/ui/bong_001.wav"):
+		_audio_cache["pickup_health"] = ResourceLoader.load("res://assets/audio/ui/bong_001.wav")
 
 	print("🎵 [SYNTH AUDIO PURGED] Preloaded %d authentic audio streams into cache (0%% synthetic sine/noise)." % _audio_cache.size())
 
