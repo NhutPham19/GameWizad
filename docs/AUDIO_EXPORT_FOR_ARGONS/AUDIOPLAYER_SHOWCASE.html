@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BẢNG KIỂM DUYỆT ÂM THANH GAMEWIZAD - DÀNH CHO ARGONS</title>
+    <title>BẢNG KIỂM DUYỆT ÂM THANH GAMEWIZAD - MASTER STEREO DIRECTIVE 32 (ARGONS)</title>
     <style>
         :root {
             --bg-primary: #0a0c12;
@@ -222,11 +222,6 @@
             border-color: var(--cobalt);
         }
 
-        .btn-play.playing {
-            background: var(--crimson);
-            border-color: var(--crimson);
-        }
-
         .combat-table {
             width: 100%;
             border-collapse: collapse;
@@ -322,21 +317,21 @@
 
     <header>
         <div class="header-title">
-            <h1>🗡️ HỆ THỐNG ÂM THANH GAMEWIZAD (AUDIT MANIFEST)</h1>
+            <h1>🗡️ HỆ THỐNG ÂM THANH GAMEWIZAD - MASTER STEREO DIRECTIVE 32</h1>
             <p>Báo Cáo Nghiệm Thu Trực Quan Dành Cho Kiến Trúc Trưởng ARGONS Kiểm Duyệt</p>
         </div>
         <div class="badge-status">
-            <span>●</span> 100% THUẦN CHẤT FOLEY KIẾM HIỆP (0% TẠP ÂM / 0% LASER)
+            <span>●</span> 25 FILE MASTER STEREO ĐỘC BẢN 1-1 (0% CẮT CỤT / ĐỦ LỬA - SÉT - ĐỊA CHẤN)
         </div>
     </header>
 
     <div class="stats-grid">
         <div class="stat-card">
-            <div class="stat-label">Tổng File Âm Thanh Thật Trong RAM</div>
-            <div class="stat-value" style="color: var(--cobalt);">25 Tệp Foley</div>
+            <div class="stat-label">Tổng File Master Stereo .WAV</div>
+            <div class="stat-value" style="color: var(--cobalt);">25 Tệp Master</div>
         </div>
         <div class="stat-card">
-            <div class="stat-label">Sự Kiện Kỹ Năng Chiến Đấu</div>
+            <div class="stat-label">Sự Kiện Kỹ Năng Ánh Xạ 1-1</div>
             <div class="stat-value" style="color: var(--crimson);">23 Sự Kiện</div>
         </div>
         <div class="stat-card">
@@ -344,30 +339,31 @@
             <div class="stat-value" style="color: var(--gold);">32 Kênh Audio</div>
         </div>
         <div class="stat-card">
-            <div class="stat-label">Kiểm Định Tự Động (Pass Rate)</div>
-            <div class="stat-value" style="color: var(--success);">100% (4/4 Test Suites)</div>
+            <div class="stat-label">Thời Lượng Ngân Vang Chiêu Lớn</div>
+            <div class="stat-value" style="color: var(--success);">0.7s &ndash; 1.2s Trọn Vẹn</div>
         </div>
     </div>
 
     <!-- COMBO AUDITION PANEL -->
     <div class="combo-box">
-        <div style="font-weight: 700; color: #fff; font-size: 15px;">🎧 NGHE THỬ COMBO CHUỖI NHÁT CHÉM (TEST VOICE CHOKING):</div>
+        <div style="font-weight: 700; color: #fff; font-size: 15px;">🎧 NGHE THỬ COMBO MASTER STEREO (NGÂN VANG TỰ NHIÊN TRỌN VẸN):</div>
         <button class="combo-btn" onclick="playComboNormal()">▶ Combo Trạng Thái 1: U1 -> U2 -> U3 (Bạch Kim)</button>
         <button class="combo-btn btn-rage" onclick="playComboRage()">🔥 Combo Trạng Thái 2: U1 -> U2 -> U3 (Huyết Lam Nộ)</button>
-        <button class="combo-btn" onclick="playSkillI()">⚡ Chiêu [I]: Chém X -> Sóng Kiếm Khí</button>
+        <button class="combo-btn" onclick="playSkillI()">⚡ Chiêu [I]: Chém X -> Sóng Kiếm Khí -> Nổ</button>
         <button class="combo-btn" onclick="playBotHit()">🎯 Chém Trúng Quái (Round-Robin Sekiro Cleave)</button>
+        <button class="combo-btn" style="background: linear-gradient(135deg, #1d3328, #2a523d); border-color: #38a169;" onclick="playAudio('25_bgm_arena_combat_loop.wav')">🎵 BGM Đấu Trường (120 BPM Taiko)</button>
     </div>
 
     <div class="tabs">
-        <button class="tab-btn active" onclick="switchTab(0)">1. Kho 25 Tệp Foley Thật Đã Nạp</button>
-        <button class="tab-btn" onclick="switchTab(1)">2. Bảng Ma Trận 23 Sự Kiện Combat</button>
+        <button class="tab-btn active" onclick="switchTab(0)">1. Kho 25 Tệp Master Stereo .wav</button>
+        <button class="tab-btn" onclick="switchTab(1)">2. Bảng Ma Trận 23 Sự Kiện Combat (Ánh Xạ 1-1)</button>
         <button class="tab-btn" onclick="switchTab(2)">3. Kiến Trúc 4 DSP Studio Audio Buses</button>
     </div>
 
     <!-- TAB 1: 25 RAW AUDIO FILES -->
     <div class="tab-pane active" id="tab0">
         <div class="section-intro">
-            Dưới đây là <strong>25 tệp âm thanh thu âm thực tế (.ogg)</strong> từ các gói Kenney RPG, Impact & Sci-Fi Sounds đang được nạp sẵn vào RAM. Mỗi tệp đều có thể bấm nút <strong>"Phát Âm Thanh"</strong> để nghe trực tiếp.
+            Dưới đây là <strong>25 tệp âm thanh Master Stereo 44.1kHz (.wav)</strong> độc bản riêng biệt, phối hợp đa tầng từ mẫu thu âm vật lý thật kết hợp mô hình cộng hưởng vật lý (Lửa ngục, Sấm sét, Địa chấn Sub-Bass, Đại kiếm xé gió). Bấm <strong>"Phát Âm Thanh"</strong> để nghe trọn vẹn không bị cắt cụt.
         </div>
         <div class="grid-cards" id="rawAudioGrid"></div>
     </div>
@@ -375,15 +371,15 @@
     <!-- TAB 2: 23 COMBAT EVENTS -->
     <div class="tab-pane" id="tab1">
         <div class="section-intro">
-            Toàn bộ 23 sự kiện âm thanh chiến đấu được thiết kế tinh gọn (1-2 lớp đòn thường, tối đa 3 nhịp chiêu cuối), có bộ cắt đuôi <strong>max_dur &le; 0.55s</strong> và cơ chế <strong>Voice Group Choking</strong> chống chồng chéo.
+            Toàn bộ 23 sự kiện kỹ năng chiến đấu được ánh xạ <strong>1-1 vào đúng file Master Stereo .wav riêng biệt</strong> (CẤM tuyệt đối dùng chung file chop.ogg / knifeSlice.ogg). Các đại tuyệt kỹ U3, I, R, P ngân vang trọn vẹn <strong>0.7s đến 1.2s</strong>.
         </div>
         <table class="combat-table">
             <thead>
                 <tr>
                     <th>Sự Kiện Kỹ Năng</th>
                     <th>Trạng Thái</th>
-                    <th>Số Lớp & Tệp Foley</th>
-                    <th>Thời Lượng (max_dur)</th>
+                    <th>Tệp Master Stereo Riêng Biệt</th>
+                    <th>Thời Lượng Tự Nhiên</th>
                     <th>Nhóm Voice Choke</th>
                     <th>Audio Bus DSP</th>
                     <th>Nghe Thử</th>
@@ -401,7 +397,7 @@
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px;">
             <div class="stat-card" style="border-left: 4px solid var(--cobalt);">
                 <h3 style="color: #66b5ff; margin-bottom: 8px;">1. NormalBladeBus (Bus Index: 1)</h3>
-                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Dành riêng cho Trạng thái 1: Lưỡi kiếm thép sắc bén, sáng rõ, dứt khoát.</p>
+                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Dành riêng cho Trạng thái 1: Bạch Kim Cực Quang - Lưỡi kiếm thép sắc bén, sáng rõ, dứt khoát.</p>
                 <ul style="font-size: 13px; list-style-type: square; margin-left: 20px; line-height: 1.8;">
                     <li><strong>AudioEffectEQ6:</strong> Boost +3.5 dB tại 3.2kHz (Presence Blade Edge Bite), Boost +2.0 dB tại 100Hz (Thân kiếm), Cut -2.0 dB tại 320Hz (Khử đục).</li>
                     <li><strong>AudioEffectCompressor:</strong> Threshold -6.0 dB, Ratio 3.2:1, Attack 400µs, Release 70ms (Giữ lực nén đanh thép).</li>
@@ -409,9 +405,9 @@
             </div>
             <div class="stat-card" style="border-left: 4px solid var(--crimson);">
                 <h3 style="color: #ff758c; margin-bottom: 8px;">2. RageOverdriveBus (Bus Index: 2)</h3>
-                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Dành riêng cho Trạng thái 2 [R]: Đại kiếm uy lực, trầm dày, vang dội.</p>
+                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Dành riêng cho Trạng thái 2 [R]: Huyết Lam Cuồng Nộ - Đại kiếm uy lực, sấm sét lửa ngục, vang dội.</p>
                 <ul style="font-size: 13px; list-style-type: square; margin-left: 20px; line-height: 1.8;">
-                    <li><strong>AudioEffectEQ6:</strong> Boost +4.0 dB tại 32Hz, +4.5 dB tại 100Hz (Thân kiếm nặng 50kg), +2.8 dB tại 3.2kHz (Lưỡi chém).</li>
+                    <li><strong>AudioEffectEQ6:</strong> Boost +4.0 dB tại 32Hz, +4.5 dB tại 100Hz (Thân kiếm nặng), +2.8 dB tại 3.2kHz (Lưỡi chém).</li>
                     <li><strong>AudioEffectReverb:</strong> Room 0.28, Wet 0.08 (Reverb phòng nhẹ tự nhiên, 0% vọng đục).</li>
                     <li><strong>AudioEffectCompressor:</strong> Threshold -6.0 dB, Ratio 4.0:1, Attack 300µs (Chống vỡ âm khi nổ nộ).</li>
                 </ul>
@@ -427,11 +423,11 @@
             </div>
             <div class="stat-card" style="border-left: 4px solid #a855f7;">
                 <h3 style="color: #c084fc; margin-bottom: 8px;">4. RageAuraBus & CombatSFX (Bus Index: 4 & 5)</h3>
-                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Phụ trợ & Hiệu ứng chuyển động môi trường.</p>
+                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Nhạc nền chiến trận BGM (25_bgm_arena_combat_loop.wav) & Phụ trợ (F2 Toggle).</p>
                 <ul style="font-size: 13px; list-style-type: square; margin-left: 20px; line-height: 1.8;">
                     <li><strong>AudioEffectLowPassFilter:</strong> Cutoff 6800.0 Hz (CombatSFX) & 7000.0 Hz (Aura).</li>
                     <li><strong>AudioEffectCompressor:</strong> Ratio 3.5:1.</li>
-                    <li><strong>Tắt ù ngầm:</strong> BGM và Rage Aura mờ -80 dB / ngắt hẳn khi không có file nhạc thật.</li>
+                    <li><strong>BGM Player:</strong> Bản nhạc nhịp trống Taiko 120 BPM phát liên tục, phím F2 bật/tắt tức thì.</li>
                 </ul>
             </div>
         </div>
@@ -439,80 +435,74 @@
 
     <script>
         const RAW_FILES = [
-            { key: "slice_1", file: "knifeSlice.ogg", cat: "blade", desc: "Lưỡi thép xé gió chém thuận (U1, Spin, Hit Bot)" },
-            { key: "slice_2", file: "knifeSlice2.ogg", cat: "blade", desc: "Lưỡi thép ngọt lịm chém ngược (U2, X-Cleave)" },
-            { key: "chop_1", file: "chop.ogg", cat: "blade", desc: "Bổ dọc đại kiếm xé toạc không khí (U3, Wave Launch)" },
-            { key: "draw_1", file: "drawKnife1.ogg", cat: "draw", desc: "Rút kiếm / Lưỡi thép chạm nhau Shh-clink (I Phase 1, DoT tick)" },
-            { key: "draw_2", file: "drawKnife2.ogg", cat: "draw", desc: "Vung đại kiếm ngân vang" },
-            { key: "draw_3", file: "drawKnife3.ogg", cat: "draw", desc: "Long Thần rút đại kiếm thức tỉnh Nộ [R]" },
-            { key: "dash_swish", file: "cloth2.ogg", cat: "move", desc: "Lướt né khí động học tốc độ cao (Dash Space)" },
-            { key: "jump_swish", file: "cloth1.ogg", cat: "move", desc: "Bật gót nhảy dứt khoát (Jump C)" },
-            { key: "step_1", file: "footstep00.ogg", cat: "move", desc: "Gót giày sắt gõ sàn đá nhịp 1" },
-            { key: "step_2", file: "footstep01.ogg", cat: "move", desc: "Gót giày sắt gõ sàn đá nhịp 2" },
-            { key: "step_3", file: "footstep02.ogg", cat: "move", desc: "Gót giày sắt gõ sàn đá nhịp 3" },
-            { key: "metal_light_1", file: "impactMetal_light_000.ogg", cat: "heavy", desc: "Mép kiếm lia trúng giáp sắt nhẹ" },
-            { key: "metal_med_1", file: "impactMetal_medium_000.ogg", cat: "heavy", desc: "Lưỡi kiếm cắn ngập giáp quái vật (Hit Bot)" },
-            { key: "metal_med_2", file: "impactMetal_medium_001.ogg", cat: "heavy", desc: "Va chấn giáp sắt nhịp 2 luân phiên (Round-Robin)" },
-            { key: "metal_heavy_1", file: "impactMetal_heavy_000.ogg", cat: "heavy", desc: "Mũi kiếm nện phập nứt sàn đá / Cắm đại kiếm đất" },
-            { key: "metal_heavy_2", file: "impactMetal_heavy_001.ogg", cat: "heavy", desc: "Va chấn đại kiếm chém càn quét" },
-            { key: "metal_heavy_3", file: "impactMetal_heavy_002.ogg", cat: "heavy", desc: "Lục kiếm khí chữ X va chạm" },
-            { key: "metal_heavy_4", file: "impactMetal_heavy_003.ogg", cat: "heavy", desc: "Tiếng thép ngân rền khi kiếm khí phình to" },
-            { key: "plate_heavy_1", file: "impactPlate_heavy_000.ogg", cat: "heavy", desc: "Đập giáp hạng nặng" },
-            { key: "punch_heavy_1", file: "impactPunch_heavy_000.ogg", cat: "heavy", desc: "Lực nện chắc nịch" },
-            { key: "punch_heavy_2", file: "impactPunch_heavy_001.ogg", cat: "heavy", desc: "Lực xung kích phụ trợ" },
-            { key: "punch_heavy_3", file: "impactPunch_heavy_002.ogg", cat: "heavy", desc: "Xung chấn thứ cấp" },
-            { key: "soft_heavy_1", file: "impactSoft_heavy_000.ogg", cat: "heavy", desc: "Quái vật đổ gục xuống sàn khi chết" },
-            { key: "sub_boom_1", file: "lowFrequency_explosion_000.ogg", cat: "sub", desc: "Rung chấn địa chấn trầm sâu (U3 Nộ, R Awaken)" },
-            { key: "sub_boom_2", file: "lowFrequency_explosion_001.ogg", cat: "sub", desc: "Địa chấn sóng xung kích nổ bom (P Explode)" }
+            { key: "01_u1_slash_platinum", file: "01_u1_slash_platinum.wav", cat: "blade", desc: "Lưỡi thép bạch kim chém thuận xé gió (0.36s)" },
+            { key: "02_u2_slash_platinum", file: "02_u2_slash_platinum.wav", cat: "blade", desc: "Lưỡi thép bạch kim chém ngược ngọt lịm (0.40s)" },
+            { key: "03_u3_heaven_shatter", file: "03_u3_heaven_shatter.wav", cat: "heavy", desc: "Đại kiếm Thiên Hạ Liệt nện sàn đá, lửa bùng & ngân vang (0.82s)" },
+            { key: "04_i_phase1_x_cleave", file: "04_i_phase1_x_cleave.wav", cat: "blade", desc: "Song kiếm chữ X lướt chém sắc bén (0.52s)" },
+            { key: "05_i_phase2_wave_launch", file: "05_i_phase2_wave_launch.wav", cat: "blade", desc: "Quét kiếm phóng Sóng Kiếm Khí rít qua không trung (0.68s)" },
+            { key: "06_i_wave_finale", file: "06_i_wave_finale.wav", cat: "heavy", desc: "Sóng kiếm khí phát nổ găm kim loại đanh chắc (0.72s)" },
+            { key: "07_rage_r_awaken", file: "07_rage_r_awaken.wav", cat: "heavy", desc: "Long Thần Rút Đại Kiếm Thức Tỉnh Hóa Nộ [R] sấm sét địa chấn (1.15s)" },
+            { key: "08_rage_r_expire", file: "08_rage_r_expire.wav", cat: "draw", desc: "Thu đại kiếm dứt khoát khi hết Nộ (0.55s)" },
+            { key: "09_u1_rage_crimson", file: "09_u1_rage_crimson.wav", cat: "heavy", desc: "Đại kiếm Huyết Lam chém ngang xé toạc không gian (0.58s)" },
+            { key: "10_u2_rage_cobalt", file: "10_u2_rage_cobalt.wav", cat: "heavy", desc: "Đại kiếm Huyết Lam chém ngược cuồng bạo sấm sét (0.62s)" },
+            { key: "11_u3_rage_dragon_fall", file: "11_u3_rage_dragon_fall.wav", cat: "heavy", desc: "Huyết Lam Long Thần Giáng: 5 đại kiếm bổ trời, nứt đất & lửa ngục (1.18s)" },
+            { key: "12_i_rage_hexa_cleave", file: "12_i_rage_hexa_cleave.wav", cat: "heavy", desc: "Lục Kiếm Khí Chữ X chém đứt hư không (0.85s)" },
+            { key: "13_i_rage_five_wing_wave", file: "13_i_rage_five_wing_wave.wav", cat: "heavy", desc: "Ngũ Dực Đại Sóng Kiếm càn quét sàn đá 3 nhịp (0.98s)" },
+            { key: "14_o_whirlwind_spin", file: "14_o_whirlwind_spin.wav", cat: "blade", desc: "Lốc Xoáy Kiếm 360° 3 nhịp xoay tròn (0.66s)" },
+            { key: "15_p_bomb_throw", file: "15_p_bomb_throw.wav", cat: "move", desc: "Ném bom lôi vụ dứt khoát (0.32s)" },
+            { key: "16_p_bomb_thunder_explode", file: "16_p_bomb_thunder_explode.wav", cat: "sub", desc: "Bom sấm sét nổ nứt đất, địa chấn sub-bass (0.88s)" },
+            { key: "17_p_bomb_dot_zap", file: "17_p_bomb_dot_zap.wav", cat: "blade", desc: "Hồ quang sấm sét DoT trong khói (0.22s)" },
+            { key: "18_dash_space", file: "18_dash_space.wav", cat: "move", desc: "Lướt né khí động học tốc độ cao [Space] (0.30s)" },
+            { key: "19_jump_c", file: "19_jump_c.wav", cat: "move", desc: "Bật gót nhảy dứt khoát [C] (0.26s)" },
+            { key: "20_footstep_stone_1", file: "20_footstep_stone_1.wav", cat: "move", desc: "Gót giày sắt gõ sàn đá nhịp 1 (0.16s)" },
+            { key: "21_footstep_stone_2", file: "21_footstep_stone_2.wav", cat: "move", desc: "Gót giày sắt gõ sàn đá nhịp 2 (0.16s)" },
+            { key: "22_hit_enemy_cleave_1", file: "22_hit_enemy_cleave_1.wav", cat: "heavy", desc: "Lưỡi thép cắt xuyên giáp kim loại nhịp 1 (0.34s)" },
+            { key: "23_hit_enemy_cleave_2", file: "23_hit_enemy_cleave_2.wav", cat: "heavy", desc: "Lưỡi thép cắt xuyên giáp kim loại nhịp 2 (0.34s)" },
+            { key: "24_enemy_death_burst", file: "24_enemy_death_burst.wav", cat: "heavy", desc: "Quái vật tử trận: Bùng nổ giáp sắt đổ gục (0.58s)" },
+            { key: "25_bgm_arena_combat_loop", file: "25_bgm_arena_combat_loop.wav", cat: "sub", desc: "Nhạc nền chiến trận Taiko & Bassline Dark Fantasy 120 BPM (8.00s Loop)" }
         ];
 
         const COMBAT_EVENTS = [
-            { id: "u1_slash", state: "State 1", name: "Đòn [U] Nhịp 1", layers: "knifeSlice.ogg (pitch 1.06)", dur: "0.18s", group: "SWING", bus: "NormalBladeBus", file: "knifeSlice.ogg", pitch: 1.06 },
-            { id: "u2_slash", state: "State 1", name: "Đòn [U] Nhịp 2", layers: "knifeSlice2.ogg (pitch 0.98)", dur: "0.20s", group: "SWING", bus: "NormalBladeBus", file: "knifeSlice2.ogg", pitch: 0.98 },
-            { id: "u3_heaven_shatter", state: "State 1", name: "Đòn [U] Nhịp 3", layers: "chop.ogg (0.0s) + impactMetal_heavy_000.ogg (0.05s)", dur: "0.32s", group: "SWING/IMPACT", bus: "Normal + HeavyImpact", file: "chop.ogg", pitch: 0.96 },
-            { id: "i_phase1_x_cleave", state: "State 1", name: "Chiêu [I] Chém Chữ X", layers: "drawKnife1.ogg + knifeSlice2.ogg", dur: "0.22s", group: "SWING", bus: "NormalBladeBus", file: "drawKnife1.ogg", pitch: 1.08 },
-            { id: "i_phase2_wave_launch", state: "State 1", name: "Chiêu [I] Phóng Kiếm Khí", layers: "chop.ogg (pitch 1.22)", dur: "0.26s", group: "SWING", bus: "NormalBladeBus", file: "chop.ogg", pitch: 1.22 },
-            { id: "i_wave_finale", state: "State 1", name: "Chiêu [I] Nổ Cuối Đường", layers: "impactMetal_heavy_001.ogg", dur: "0.30s", group: "IMPACT", bus: "HeavyImpactBus", file: "impactMetal_heavy_001.ogg", pitch: 1.02 },
-            { id: "rage_r_awaken", state: "State 2 [R]", name: "Thức Tỉnh Hóa Nộ [R]", layers: "drawKnife3 (0.0s) + impactMetal_heavy_0 (0.03s) + lowFreq_0 (0.05s)", dur: "0.44s", group: "STATE", bus: "Rage + HeavyImpact", file: "drawKnife3.ogg", pitch: 0.80 },
-            { id: "rage_r_expire", state: "State 2 [R]", name: "Thu Nộ Hết Thời Gian", layers: "drawKnife1.ogg (pitch 0.82)", dur: "0.22s", group: "STATE", bus: "NormalBladeBus", file: "drawKnife1.ogg", pitch: 0.82 },
-            { id: "u1_rage", state: "State 2 [R]", name: "Đòn [U1] Nộ", layers: "knifeSlice (0.78) + impactMetal_heavy_1 (0.82)", dur: "0.30s", group: "SWING", bus: "RageOverdriveBus", file: "knifeSlice.ogg", pitch: 0.78 },
-            { id: "u2_rage", state: "State 2 [R]", name: "Đòn [U2] Nộ", layers: "knifeSlice2 (0.74) + impactMetal_heavy_2 (0.78)", dur: "0.32s", group: "SWING", bus: "RageOverdriveBus", file: "knifeSlice2.ogg", pitch: 0.74 },
-            { id: "u3_rage_dragon_fall", state: "State 2 [R]", name: "Đòn [U3] Long Thần Giáng", layers: "chop (0.0s) + impactMetal_heavy_0 + lowFreq_0 (0.05s) + impactMetal_heavy_3 (0.20s)", dur: "0.45s", group: "SWING/IMPACT", bus: "Rage + HeavyImpact", file: "chop.ogg", pitch: 0.70 },
-            { id: "i_rage_hexa_cleave", state: "State 2 [R]", name: "Chiêu [I] Lục Kiếm Khí X Nộ", layers: "drawKnife3 (0.78) + impactMetal_heavy_2 (0.80) + lowFreq_1 (0.85)", dur: "0.36s", group: "SWING/IMPACT", bus: "Rage + HeavyImpact", file: "drawKnife3.ogg", pitch: 0.78 },
-            { id: "i_rage_five_wing_wave", state: "State 2 [R]", name: "Chiêu [I] Ngũ Dực Sóng Kiếm Nộ", layers: "chop (0.75) + impactMetal_heavy_1 (0.78) + lowFreq_0 (0.80)", dur: "0.38s", group: "SWING/IMPACT", bus: "Rage + HeavyImpact", file: "chop.ogg", pitch: 0.75 },
-            { id: "o_whirlwind_spin", state: "All", name: "Chiêu [O] Lốc Xoáy Kiếm 360°", layers: "knifeSlice (0.0s) -> knifeSlice2 (0.12s) -> drawKnife1 (0.24s)", dur: "0.18s/nhịp", group: "SWING", bus: "NormalBladeBus", file: "knifeSlice.ogg", pitch: 1.0 },
-            { id: "p_bomb_throw", state: "All", name: "Chiêu [P] Ném Bom Lôi Vụ", layers: "cloth2.ogg (pitch 1.05)", dur: "0.15s", group: "MOVEMENT", bus: "NormalBladeBus", file: "cloth2.ogg", pitch: 1.05 },
-            { id: "p_bomb_thunder_explode", state: "All", name: "Chiêu [P] Bom Nổ", layers: "lowFreq_1 (0.85) + impactMetal_heavy_0 (0.92)", dur: "0.35s", group: "IMPACT", bus: "HeavyImpactBus", file: "lowFrequency_explosion_001.ogg", pitch: 0.85 },
-            { id: "p_bomb_dot_zap", state: "All", name: "Chiêu [P] DoT Tick Lôi Vụ", layers: "drawKnife1.ogg (pitch 1.65, vol -16dB)", dur: "0.08s", group: "FOOTSTEP", bus: "NormalBladeBus", file: "drawKnife1.ogg", pitch: 1.65 },
-            { id: "dash_space", state: "All", name: "Lướt Né [Space]", layers: "cloth2.ogg (pitch 1.15)", dur: "0.18s", group: "MOVEMENT", bus: "NormalBladeBus", file: "cloth2.ogg", pitch: 1.15 },
-            { id: "jump_c", state: "All", name: "Nhảy [C]", layers: "cloth1.ogg (pitch 1.10)", dur: "0.15s", group: "MOVEMENT", bus: "NormalBladeBus", file: "cloth1.ogg", pitch: 1.10 },
-            { id: "footstep_stone", state: "All", name: "Bước Chân Sàn Đá", layers: "footstep00..02.ogg (vol -10dB, tự tắt khi chém)", dur: "0.10s", group: "FOOTSTEP", bus: "NormalBladeBus", file: "footstep00.ogg", pitch: 0.96 },
-            { id: "hit_enemy_flesh_metal", state: "All", name: "Chém Trúng Quái", layers: "knifeSlice / knifeSlice2 + impactMetal_medium (Round-Robin)", dur: "0.18s", group: "IMPACT", bus: "Normal + HeavyImpact", file: "knifeSlice.ogg", pitch: 1.08 },
-            { id: "enemy_death_burst", state: "All", name: "Quái Vật Tử Trận", layers: "impactMetal_heavy_3 + impactSoft_heavy_0", dur: "0.25s", group: "IMPACT", bus: "HeavyImpactBus", file: "impactMetal_heavy_003.ogg", pitch: 0.88 }
+            { id: "u1_slash", state: "State 1", name: "Đòn [U] Nhịp 1 Bạch Kim", file: "01_u1_slash_platinum.wav", dur: "0.36s", group: "SWING", bus: "NormalBladeBus" },
+            { id: "u2_slash", state: "State 1", name: "Đòn [U] Nhịp 2 Bạch Kim", file: "02_u2_slash_platinum.wav", dur: "0.40s", group: "SWING", bus: "NormalBladeBus" },
+            { id: "u3_heaven_shatter", state: "State 1", name: "Đòn [U3] Thiên Hạ Liệt", file: "03_u3_heaven_shatter.wav", dur: "0.82s", group: "SWING", bus: "NormalBladeBus" },
+            { id: "i_phase1_x_cleave", state: "State 1", name: "Chiêu [I] Chém Chữ X", file: "04_i_phase1_x_cleave.wav", dur: "0.52s", group: "SWING", bus: "NormalBladeBus" },
+            { id: "i_phase2_wave_launch", state: "State 1", name: "Chiêu [I] Phóng Kiếm Khí", file: "05_i_phase2_wave_launch.wav", dur: "0.68s", group: "SWING", bus: "NormalBladeBus" },
+            { id: "i_wave_finale", state: "State 1", name: "Chiêu [I] Nổ Cuối Đường", file: "06_i_wave_finale.wav", dur: "0.72s", group: "IMPACT", bus: "HeavyImpactBus" },
+            { id: "rage_r_awaken", state: "State 2 [R]", name: "Thức Tỉnh Hóa Nộ [R]", file: "07_rage_r_awaken.wav", dur: "1.15s", group: "STATE", bus: "RageOverdriveBus" },
+            { id: "rage_r_expire", state: "State 2 [R]", name: "Thu Nộ Hết Thời Gian", file: "08_rage_r_expire.wav", dur: "0.55s", group: "STATE", bus: "NormalBladeBus" },
+            { id: "u1_rage", state: "State 2 [R]", name: "Đòn [U1] Huyết Lam Nộ", file: "09_u1_rage_crimson.wav", dur: "0.58s", group: "SWING", bus: "RageOverdriveBus" },
+            { id: "u2_rage", state: "State 2 [R]", name: "Đòn [U2] Huyết Lam Nộ", file: "10_u2_rage_cobalt.wav", dur: "0.62s", group: "SWING", bus: "RageOverdriveBus" },
+            { id: "u3_rage_dragon_fall", state: "State 2 [R]", name: "Đòn [U3] Long Thần Giáng", file: "11_u3_rage_dragon_fall.wav", dur: "1.18s", group: "SWING", bus: "RageOverdriveBus" },
+            { id: "i_rage_hexa_cleave", state: "State 2 [R]", name: "Chiêu [I] Lục Kiếm Khí X Nộ", file: "12_i_rage_hexa_cleave.wav", dur: "0.85s", group: "SWING", bus: "RageOverdriveBus" },
+            { id: "i_rage_five_wing_wave", state: "State 2 [R]", name: "Chiêu [I] Ngũ Dực Sóng Kiếm Nộ", file: "13_i_rage_five_wing_wave.wav", dur: "0.98s", group: "SWING", bus: "RageOverdriveBus" },
+            { id: "o_whirlwind_spin", state: "All", name: "Chiêu [O] Lốc Xoáy Kiếm 360°", file: "14_o_whirlwind_spin.wav", dur: "0.66s", group: "SWING", bus: "NormalBladeBus" },
+            { id: "p_bomb_throw", state: "All", name: "Chiêu [P] Ném Bom Lôi Vụ", file: "15_p_bomb_throw.wav", dur: "0.32s", group: "MOVEMENT", bus: "NormalBladeBus" },
+            { id: "p_bomb_thunder_explode", state: "All", name: "Chiêu [P] Bom Sét Nổ", file: "16_p_bomb_thunder_explode.wav", dur: "0.88s", group: "IMPACT", bus: "HeavyImpactBus" },
+            { id: "p_bomb_dot_zap", state: "All", name: "Chiêu [P] DoT Tick Lôi Vụ", file: "17_p_bomb_dot_zap.wav", dur: "0.22s", group: "FOOTSTEP", bus: "NormalBladeBus" },
+            { id: "dash_space", state: "All", name: "Lướt Né [Space]", file: "18_dash_space.wav", dur: "0.30s", group: "MOVEMENT", bus: "NormalBladeBus" },
+            { id: "jump_c", state: "All", name: "Nhảy [C]", file: "19_jump_c.wav", dur: "0.26s", group: "MOVEMENT", bus: "NormalBladeBus" },
+            { id: "footstep_stone", state: "All", name: "Bước Chân Sàn Đá (Luân Phiên)", file: "20_footstep_stone_1.wav", dur: "0.16s", group: "FOOTSTEP", bus: "NormalBladeBus" },
+            { id: "hit_enemy_flesh_metal", state: "All", name: "Chém Trúng Quái (Luân Phiên)", file: "22_hit_enemy_cleave_1.wav", dur: "0.34s", group: "IMPACT", bus: "HeavyImpactBus" },
+            { id: "enemy_death_burst", state: "All", name: "Quái Vật Tử Trận", file: "24_enemy_death_burst.wav", dur: "0.58s", group: "IMPACT", bus: "HeavyImpactBus" },
+            { id: "bgm_arena_combat_loop", state: "All", name: "Nhạc Nền Chiến Trận BGM (F2)", file: "25_bgm_arena_combat_loop.wav", dur: "8.00s", group: "STATE", bus: "RageAuraBus" }
         ];
 
         let activeAudios = [];
 
-        function playAudio(filename, pitch = 1.0, maxDur = 0.55) {
+        // PHÁT TRỌN VẸN CHIỀU DÀI TỰ NHIÊN CỦA FILE MASTER STEREO .WAV (KHÔNG CẮT CỤT 0.4s)
+        function playAudio(filename, pitch = 1.0) {
             const audio = new Audio("audio_files/" + filename);
             audio.playbackRate = pitch;
             audio.preservesPitch = false;
             audio.play().catch(e => console.warn(e));
 
             activeAudios.push(audio);
-            setTimeout(() => {
-                // Fade out
-                let fade = setInterval(() => {
-                    if (audio.volume > 0.1) {
-                        audio.volume -= 0.1;
-                    } else {
-                        clearInterval(fade);
-                        audio.pause();
-                        const idx = activeAudios.indexOf(audio);
-                        if (idx !== -1) activeAudios.splice(idx, 1);
-                    }
-                }, 10);
-            }, maxDur * 1000);
+            audio.onended = () => {
+                const idx = activeAudios.indexOf(audio);
+                if (idx !== -1) activeAudios.splice(idx, 1);
+            };
+            return audio;
         }
 
         function chokeAudio() {
@@ -525,65 +515,43 @@
 
         function playComboNormal() {
             chokeAudio();
-            playAudio("knifeSlice.ogg", 1.06, 0.18);
+            playAudio("01_u1_slash_platinum.wav");
             setTimeout(() => {
-                chokeAudio();
-                playAudio("knifeSlice2.ogg", 0.98, 0.20);
-            }, 200);
+                playAudio("02_u2_slash_platinum.wav");
+            }, 320);
             setTimeout(() => {
-                chokeAudio();
-                playAudio("chop.ogg", 0.96, 0.22);
-                setTimeout(() => playAudio("impactMetal_heavy_000.ogg", 1.08, 0.30), 40);
-            }, 420);
+                playAudio("03_u3_heaven_shatter.wav");
+            }, 680);
         }
 
         function playComboRage() {
             chokeAudio();
-            // U1 Rage
-            playAudio("knifeSlice.ogg", 0.78, 0.28);
-            setTimeout(() => playAudio("impactMetal_heavy_001.ogg", 0.82, 0.28), 20);
-
-            // U2 Rage
+            playAudio("09_u1_rage_crimson.wav");
             setTimeout(() => {
-                chokeAudio();
-                playAudio("knifeSlice2.ogg", 0.74, 0.30);
-                setTimeout(() => playAudio("impactMetal_heavy_002.ogg", 0.78, 0.30), 20);
-            }, 280);
-
-            // U3 Rage Dragon Fall
+                playAudio("10_u2_rage_cobalt.wav");
+            }, 450);
             setTimeout(() => {
-                chokeAudio();
-                playAudio("chop.ogg", 0.70, 0.25);
-                setTimeout(() => {
-                    playAudio("impactMetal_heavy_000.ogg", 0.75, 0.40);
-                    playAudio("lowFrequency_explosion_000.ogg", 0.78, 0.45);
-                }, 50);
-                setTimeout(() => {
-                    playAudio("impactMetal_heavy_003.ogg", 0.72, 0.35);
-                }, 200);
-            }, 600);
+                playAudio("11_u3_rage_dragon_fall.wav");
+            }, 950);
         }
 
         function playSkillI() {
             chokeAudio();
-            playAudio("drawKnife1.ogg", 1.08, 0.20);
-            setTimeout(() => playAudio("knifeSlice2.ogg", 1.02, 0.22), 35);
+            playAudio("04_i_phase1_x_cleave.wav");
             setTimeout(() => {
-                playAudio("chop.ogg", 1.22, 0.26);
-                setTimeout(() => playAudio("impactMetal_heavy_001.ogg", 1.02, 0.30), 180);
-            }, 250);
+                playAudio("05_i_phase2_wave_launch.wav");
+            }, 380);
+            setTimeout(() => {
+                playAudio("06_i_wave_finale.wav");
+            }, 780);
         }
 
         let hitCount = 0;
         function playBotHit() {
-            const slices = ["knifeSlice.ogg", "knifeSlice2.ogg"];
-            const metals = ["impactMetal_medium_000.ogg", "impactMetal_medium_001.ogg", "impactMetal_light_000.ogg"];
-            const s = slices[hitCount % slices.length];
-            const m = metals[hitCount % metals.length];
+            const hits = ["22_hit_enemy_cleave_1.wav", "23_hit_enemy_cleave_2.wav"];
+            const s = hits[hitCount % hits.length];
             hitCount++;
-            const pitch = 0.98 + (Math.random() * 0.08);
-            playAudio(s, pitch, 0.16);
-            setTimeout(() => playAudio(m, pitch, 0.18), 15);
+            playAudio(s);
         }
 
         function switchTab(idx) {
@@ -605,7 +573,7 @@
                     <div class="audio-meta">${item.file}</div>
                     <div style="font-size: 13px; color: #a0aec0; margin-top: 8px;">${item.desc}</div>
                 </div>
-                <button class="btn-play" onclick="playAudio('${item.file}', 1.0, 0.4)">▶ Phát Âm Thanh</button>
+                <button class="btn-play" onclick="playAudio('${item.file}')">▶ Phát Âm Thanh</button>
             `;
             grid.appendChild(card);
         });
@@ -618,11 +586,11 @@
             tr.innerHTML = `
                 <td><strong>${ev.name}</strong><br><small style="color:#718096; font-family:monospace;">${ev.id}</small></td>
                 <td><span class="${isRage ? 'pill-state2' : 'pill-state1'}">${ev.state}</span></td>
-                <td>${ev.layers}</td>
-                <td><code>${ev.dur}</code></td>
+                <td><code style="color:#66b5ff;">${ev.file}</code></td>
+                <td><code style="color:#00e676;">${ev.dur}</code></td>
                 <td><span class="bus-tag">${ev.group}</span></td>
                 <td><span class="bus-tag">${ev.bus}</span></td>
-                <td><button class="btn-play" style="padding: 4px 10px; font-size: 12px;" onclick="playAudio('${ev.file}', ${ev.pitch}, 0.4)">▶ Nghe</button></td>
+                <td><button class="btn-play" style="padding: 4px 10px; font-size: 12px;" onclick="playAudio('${ev.file}')">▶ Nghe</button></td>
             `;
             tbody.appendChild(tr);
         });
