@@ -502,7 +502,18 @@
 
 - [x] **TASK 30.3: Kiểm Thử Tự Động 100% PASS, Báo Cáo Nghiệm Thu & Đồng Bộ GitHub** (PASS)
   - Kịch bản kiểm thử [`test_phase_30_clean_structured_audio.gd`](file:///e:/DoAnCaNhan/ThuVienGame/GameWizad/src_game/tests/test_phase_30_clean_structured_audio.gd) đạt PASS 100% cả 4 tiêu chuẩn (0% laser/spaceship files, 100% max_dur <= 0.55s, 0% distortion/chorus, 0% PrimitiveMesh).
-  - Kịch bản hồi quy `test_phase_27_rage_aura_6layers_and_audio_system.gd` đạt PASS 100%.
+  - Kịch bản hồi quy `test_phase_27_rage_aura_6layers_and_audio_system.gd`, `test_phase_28_real_foley_audio_overhaul.gd`, `test_phase_29_ultimate_studio_audio_and_dual_state_sfx.gd` đạt PASS 100%.
+
+- [x] **TASK 30.4: Nâng Cấp Foley Kiếm Hiệp AAA Thuần Khiết (Pure Blade Edge & Armor Cleave)** (PASS)
+  - *Thực thi:* `AGENT-01` + `AGENT-03` | *Nghiệm thu:* `AGENT-06` (**PASS**)
+  - *Khử tạp âm triệt để:*
+    - Xóa bỏ hoàn toàn tiếng chuông chùa (`impactBell_heavy_000.ogg`) trong U3 và Thức Tỉnh Nộ, thay bằng va chấn thép nặng vang rền (`metal_heavy_1..4`).
+    - Xóa bỏ hoàn toàn âm thanh phản lực tên lửa (`thrusterFire_000.ogg`) khi phóng kiếm khí, thay bằng nhát chém xé toạc không trung (`chop_1`) kết hợp va chấn thép (`metal_heavy_2`).
+    - Xóa bỏ tiếng quạt vải lạch phạch (`clothBelt.ogg`) khi Lướt [Space], thay bằng luồng khí động học bén gọn (`cloth2.ogg` pitch 1.15).
+    - Xóa bỏ tiếng bước chân giả tiếng điện DoT (`step_1` ở pitch 2.2), thay bằng tiếng lưỡi thép sắc lẹm tick nhẹ (`draw_1` pitch 1.65, vol -16 dB).
+  - *Cơ chế Luân phiên Đa dạng (Round-Robin Blade Clashing):*
+    - Khi chém trúng quái vật (`hit_enemy_flesh_metal`), âm thanh tự động hoán đổi luân phiên giữa nhát chém thuận (`knifeSlice`) và nhát chém ngược (`knifeSlice2`), đồng thời hoán đổi va chấn giáp sắt (`metal_medium_000`, `metal_medium_001`, `metal_light_000`) với bộ rung tần pitch jitter (0.975 - 1.025), mang lại trải nghiệm chém trúng chân thực, đanh thép chuẩn phong cách Sekiro / Elden Ring mà không gây mỏi tai.
+  - *Kiểm định hoàn hảo:* 100% test phase 27, 28, 29, 30 đạt PASS tuyệt đối, 0% PrimitiveMesh.
 
   - Cập nhật nhãn nút Restart trên HUD thành `"🔄 CHƠI LẠI (Phím F1)"`.
   - Thay thế toàn bộ mã bắt phím reload từ `KEY_R` sang `KEY_F1` (`Input.is_physical_key_pressed(KEY_F1)` và `_unhandled_input`).

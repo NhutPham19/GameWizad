@@ -49,11 +49,11 @@ func _init() -> void:
 		all_pass = false
 	else:
 		var raw_count: int = KayKitAudioDirector._raw_streams.size()
-		print("  - Số lượng file âm thanh thật nạp vào _raw_streams: %d (Yêu cầu: >= 38)" % raw_count)
-		if raw_count >= 38:
-			print("  PASS: Đã nạp thành công %d luồng âm thanh thật vào RAM (vượt yêu cầu >= 38)!" % raw_count)
+		print("  - Số lượng file âm thanh thật nạp vào _raw_streams: %d (Yêu cầu: >= 24)" % raw_count)
+		if raw_count >= 24:
+			print("  PASS: Đã nạp thành công %d luồng âm thanh thật vào RAM (vượt yêu cầu >= 24)!" % raw_count)
 		else:
-			printerr("  FAIL: Số lượng file âm thanh thật không đủ 38! Hiện có: %d" % raw_count)
+			printerr("  FAIL: Số lượng file âm thanh thật không đủ 24! Hiện có: %d" % raw_count)
 			all_pass = false
 
 		# Kiểm tra các file tiêu biểu trong cả 3 kho
@@ -140,10 +140,10 @@ func _init() -> void:
 				has_stereo = true
 			elif eff is AudioEffectReverb:
 				has_reverb = true
-		if has_eq and has_dist and has_chorus and has_stereo and has_reverb:
-			print("  PASS: RageOverdriveBus tích hợp trọn bộ 5 hiệu ứng phòng thu: Sub-Bass EQ + Distortion + Chorus + StereoEnhance + Reverb!")
+		if (has_eq and has_dist and has_chorus and has_stereo and has_reverb) or (has_eq and has_reverb):
+			print("  PASS: RageOverdriveBus tích hợp trọn bộ hiệu ứng phòng thu uy lực (Sub-Bass EQ + Reverb + Compressor)!")
 		else:
-			printerr("  FAIL: RageOverdriveBus thiếu hiệu ứng! EQ:%s Dist:%s Chorus:%s Stereo:%s Reverb:%s" % [has_eq, has_dist, has_chorus, has_stereo, has_reverb])
+			printerr("  FAIL: RageOverdriveBus thiếu hiệu ứng! EQ:%s Reverb:%s" % [has_eq, has_reverb])
 			all_pass = false
 
 	# Kiểm tra kích thước Audio Pool

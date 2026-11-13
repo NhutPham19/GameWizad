@@ -2,11 +2,11 @@ class_name KayKitAudioDirector
 extends Node
 
 # ==============================================================================
-# KAYKIT AUDIO DIRECTOR — DIRECTIVE 30 (CLEAN, STRUCTURED, ZERO-CLUTTER AUDIO)
-# - Xóa sạch 100% hiện tượng chồng chéo nhiều file âm thanh gây hỗn loạn.
-# - Cấm tuyệt đối các file súng laser/tàu vũ trụ kéo dài.
-# - Tích hợp Bộ Cắt Đuôi Âm Tự Động (max_dur Envelope Fade-out) & Nhường Kênh (Voice Choking).
-# - Tách biệt rõ ràng, hợp lý giữa Trạng Thái 1 (Kiếm Thép Sắc Gọn) và Trạng Thái 2 (Đại Kiếm Nộ Trầm Đầm).
+# KAYKIT AUDIO DIRECTOR — PURE AAA BLADE & SWORD FOLEY SYSTEM
+# - 100% Thuần Chất Kiếm Hiệp ARPG: Lưỡi Thép Cắt Gió, Va Chấn Giáp Trụ & Đại Kiếm Trầm Hùng.
+# - Loại bỏ triệt để âm thanh tạp (chuông đồng lạc quẻ, lửa tên lửa, tiếng xột xoạt).
+# - Kiến trúc 4 Audio Bus DSP chuyên nghiệp: EQ6 tăng độ sắc bén (Presence 3.2kHz) + Đầm chắc (Low 100Hz).
+# - Bộ Cắt Đuôi Tự Động (max_dur Envelope Trim) & Cơ Chế Nhường Kênh (Voice Group Choking).
 # ==============================================================================
 
 static var _instance: KayKitAudioDirector = null
@@ -21,7 +21,7 @@ var current_player_idx: int = 0
 var bgm_player: AudioStreamPlayer = null
 var rage_aura_loop_player: AudioStreamPlayer = null
 
-# Quản lý nhóm kênh để ngắt âm thừa (Choking) không cho chồng chéo lộn xộn
+# Quản lý nhóm kênh để ngắt âm thừa (Voice Choking)
 var _active_group_players: Dictionary = {
 	"SWING": [],
 	"IMPACT": [],
@@ -36,7 +36,7 @@ var play_counts: Dictionary = {}
 var _last_play_time: Dictionary = {}
 var _last_combat_action_time: float = -10.0
 
-const MIN_RETRIGGER_DELAY: float = 0.045
+const MIN_RETRIGGER_DELAY: float = 0.040
 
 const BUS_NORMAL := "NormalBladeBus"
 const BUS_RAGE := "RageOverdriveBus"
@@ -58,17 +58,17 @@ func _ready() -> void:
 	_init_audio_pool()
 
 # ==============================================================================
-# 1. THIẾT LẬP AUDIO BUS TRONG TRẺO, SẠCH SẼ (KHÔNG DISTORTION / KHÔNG VỠ TIẾNG)
+# 1. THIẾT LẬP 4 AUDIO BUS DSP CHUẨN XÁC CHO LƯỠI KIẾM THÉP (0% MÉO TIẾNG)
 # ==============================================================================
 func _setup_studio_audio_buses() -> void:
-	# Xóa mọi hiệu ứng cũ nếu bus đã tồn tại để làm sạch hoàn toàn
+	# Dọn sạch các hiệu ứng cũ để cấu hình lại chuẩn phòng thu
 	for b_name in [BUS_NORMAL, BUS_RAGE, BUS_IMPACT, BUS_AURA, "CombatSFX"]:
 		var existing_idx := AudioServer.get_bus_index(b_name)
 		if existing_idx != -1:
 			while AudioServer.get_bus_effect_count(existing_idx) > 0:
 				AudioServer.remove_bus_effect(existing_idx, 0)
 
-	# --- BUS 1: NormalBladeBus (Trạng Thái 1: Kiếm thép sắc gọn, trong trẻo) ---
+	# --- BUS 1: NormalBladeBus (Trạng Thái 1: Lưỡi kiếm thép sắc bén, sáng rõ, dứt khoát) ---
 	var idx_norm := AudioServer.get_bus_index(BUS_NORMAL)
 	if idx_norm == -1:
 		idx_norm = AudioServer.bus_count
@@ -77,21 +77,23 @@ func _setup_studio_audio_buses() -> void:
 		AudioServer.set_bus_send(idx_norm, "Master")
 
 	var eq_norm := AudioEffectEQ6.new()
-	eq_norm.set_band_gain_db(0, 0.0)   # 32 Hz
-	eq_norm.set_band_gain_db(1, 1.5)   # 100 Hz (Độ đầm nhẹ)
-	eq_norm.set_band_gain_db(2, -1.5)  # 320 Hz (Lọc sạch âm đục)
-	eq_norm.set_band_gain_db(3, 1.0)   # 1000 Hz
-	eq_norm.set_band_gain_db(4, 2.0)   # 3200 Hz (Độ bén lưỡi kiếm)
-	eq_norm.set_band_gain_db(5, -3.0)  # 10000 Hz (Êm tai, không chói)
+	eq_norm.set_band_gain_db(0, -2.0)  # 32 Hz (Cắt bỏ rung lắc không cần thiết)
+	eq_norm.set_band_gain_db(1, 2.0)   # 100 Hz (Độ đầm thân kiếm)
+	eq_norm.set_band_gain_db(2, -2.0)  # 320 Hz (Lọc sạch âm đục, làm rõ tiếng rít gió)
+	eq_norm.set_band_gain_db(3, 1.5)   # 1000 Hz (Độ rõ tiếng lưỡi thép)
+	eq_norm.set_band_gain_db(4, 3.5)   # 3200 Hz (ĐỘ SẮC BÉN LƯỠI THÉP - The Bite of the Blade)
+	eq_norm.set_band_gain_db(5, -2.5)  # 10000 Hz (Mượt mà, không chói rát tai)
 	AudioServer.add_bus_effect(idx_norm, eq_norm)
 
 	var comp_norm := AudioEffectCompressor.new()
 	comp_norm.threshold = -6.0
-	comp_norm.ratio = 3.0
-	comp_norm.gain = 0.0
+	comp_norm.ratio = 3.2
+	comp_norm.attack_us = 400.0
+	comp_norm.release_ms = 70.0
+	comp_norm.gain = 0.5
 	AudioServer.add_bus_effect(idx_norm, comp_norm)
 
-	# --- BUS 2: RageOverdriveBus (Trạng Thái 2 [R]: Trầm hùng, đầm chắc, KHÔNG méo tiếng) ---
+	# --- BUS 2: RageOverdriveBus (Trạng Thái 2 [R]: Đại kiếm uy lực, trầm dày, vang dội) ---
 	var idx_rage := AudioServer.get_bus_index(BUS_RAGE)
 	if idx_rage == -1:
 		idx_rage = AudioServer.bus_count
@@ -100,29 +102,31 @@ func _setup_studio_audio_buses() -> void:
 		AudioServer.set_bus_send(idx_rage, "Master")
 
 	var eq_rage := AudioEffectEQ6.new()
-	eq_rage.set_band_gain_db(0, 3.5)   # 32 Hz (Lực trầm vừa vặn, ấm)
-	eq_rage.set_band_gain_db(1, 4.0)   # 100 Hz (Thân đại kiếm dày)
-	eq_rage.set_band_gain_db(2, -2.0)  # 320 Hz (Khử ù tuyệt đối)
-	eq_rage.set_band_gain_db(3, 1.0)   # 1000 Hz
-	eq_rage.set_band_gain_db(4, 1.5)   # 3200 Hz
-	eq_rage.set_band_gain_db(5, -4.0)  # 10000 Hz
+	eq_rage.set_band_gain_db(0, 4.0)   # 32 Hz (Rung chấn trầm ấm của đại kiếm)
+	eq_rage.set_band_gain_db(1, 4.5)   # 100 Hz (Thân kiếm nặng 50kg)
+	eq_rage.set_band_gain_db(2, -1.5)  # 320 Hz (Khử ù)
+	eq_rage.set_band_gain_db(3, 1.8)   # 1000 Hz
+	eq_rage.set_band_gain_db(4, 2.8)   # 3200 Hz (Vẫn giữ độ sắc ngọt của lưỡi chém)
+	eq_rage.set_band_gain_db(5, -3.5)  # 10000 Hz
 	AudioServer.add_bus_effect(idx_rage, eq_rage)
 
 	var rev_rage := AudioEffectReverb.new()
-	rev_rage.room_size = 0.38
-	rev_rage.damping = 0.72
-	rev_rage.spread = 0.80
-	rev_rage.wet = 0.10 # Độ vang rất tinh tế 10%, không gây vọng ồn ào
+	rev_rage.room_size = 0.28
+	rev_rage.damping = 0.75
+	rev_rage.spread = 0.75
+	rev_rage.wet = 0.08 # Reverb phòng tự nhiên rất nhẹ, không gây vọng đục
 	rev_rage.dry = 0.95
 	AudioServer.add_bus_effect(idx_rage, rev_rage)
 
 	var comp_rage := AudioEffectCompressor.new()
 	comp_rage.threshold = -6.0
 	comp_rage.ratio = 4.0
-	comp_rage.gain = 0.5
+	comp_rage.attack_us = 300.0
+	comp_rage.release_ms = 90.0
+	comp_rage.gain = 1.0
 	AudioServer.add_bus_effect(idx_rage, comp_rage)
 
-	# --- BUS 3: HeavyImpactBus (Tiếng va chạm & Nổ địa chấn gọn, chắc) ---
+	# --- BUS 3: HeavyImpactBus (Va chạm kim loại găm đất & Nổ kiếm khí đanh thép) ---
 	var idx_imp := AudioServer.get_bus_index(BUS_IMPACT)
 	if idx_imp == -1:
 		idx_imp = AudioServer.bus_count
@@ -131,25 +135,25 @@ func _setup_studio_audio_buses() -> void:
 		AudioServer.set_bus_send(idx_imp, "Master")
 
 	var eq_imp := AudioEffectEQ6.new()
-	eq_imp.set_band_gain_db(0, 3.5)
-	eq_imp.set_band_gain_db(1, 3.5)
-	eq_imp.set_band_gain_db(2, -2.5)
-	eq_imp.set_band_gain_db(3, 0.5)
-	eq_imp.set_band_gain_db(4, 1.0)
-	eq_imp.set_band_gain_db(5, -4.5)
+	eq_imp.set_band_gain_db(0, 4.5)   # 32 Hz (Chấn động sàn đá)
+	eq_imp.set_band_gain_db(1, 4.0)   # 100 Hz (Lực nện chắc tay)
+	eq_imp.set_band_gain_db(2, -2.0)  # 320 Hz
+	eq_imp.set_band_gain_db(3, 1.0)   # 1000 Hz
+	eq_imp.set_band_gain_db(4, 1.5)   # 3200 Hz
+	eq_imp.set_band_gain_db(5, -4.0)  # 10000 Hz
 	AudioServer.add_bus_effect(idx_imp, eq_imp)
 
 	var lpf_imp := AudioEffectLowPassFilter.new()
-	lpf_imp.cutoff_hz = 5800.0
+	lpf_imp.cutoff_hz = 6500.0
 	AudioServer.add_bus_effect(idx_imp, lpf_imp)
 
 	var comp_imp := AudioEffectCompressor.new()
-	comp_imp.threshold = -6.0
+	comp_imp.threshold = -5.5
 	comp_imp.ratio = 4.0
-	comp_imp.gain = 0.0
+	comp_imp.gain = 0.5
 	AudioServer.add_bus_effect(idx_imp, comp_imp)
 
-	# --- BUS 4: RageAuraBus & CombatSFX (Tương thích kiểm thử) ---
+	# --- BUS 4: RageAuraBus & CombatSFX (Phụ trợ) ---
 	for aux_bus in [BUS_AURA, "CombatSFX"]:
 		var idx_a := AudioServer.get_bus_index(aux_bus)
 		if idx_a == -1:
@@ -158,7 +162,7 @@ func _setup_studio_audio_buses() -> void:
 			AudioServer.set_bus_name(idx_a, aux_bus)
 			AudioServer.set_bus_send(idx_a, "Master")
 		var lpf_a := AudioEffectLowPassFilter.new()
-		lpf_a.cutoff_hz = 6800.0
+		lpf_a.cutoff_hz = 6800.0 if aux_bus == "CombatSFX" else 7000.0
 		AudioServer.add_bus_effect(idx_a, lpf_a)
 		var comp_a := AudioEffectCompressor.new()
 		comp_a.threshold = -6.0
@@ -235,12 +239,11 @@ static func set_rage_bgm_mode(is_rage: bool) -> void:
 	if inst.bgm_player:
 		inst.bgm_player.pitch_scale = 1.08 if is_rage else 1.00
 		inst.bgm_player.volume_db = -11.0 if is_rage else -14.0
-	# Tuyệt đối KHÔNG bật tiếng ù liên tục trong rage_aura_loop_player để giữ âm trường trong trẻo!
 	if inst.rage_aura_loop_player and inst.rage_aura_loop_player.playing:
 		inst.rage_aura_loop_player.stop()
 
 # ==============================================================================
-# 2. KHO ÂM THANH CHỌN LỌC TINH TẾ (LOẠI BỎ 100% TIẾNG LASER & TÀU VŨ TRỤ)
+# 2. KHO ÂM THANH THUẦN CHẤT KIẾM HIỆP (100% BLADE FOLEY & THÉP THỰC TẾ)
 # ==============================================================================
 func _load_real_stream(key: String, candidate_paths: Array[String]) -> void:
 	for path in candidate_paths:
@@ -255,191 +258,190 @@ func _prebake_audio_bank() -> void:
 		return
 	_is_prebaked = true
 
-	# 1. Nhóm Kiếm Thép & Chuyển Động (RPG Foley)
+	# --- A. Lưỡi Kiếm Thép & Vung Kiếm Xé Gió (Kenney RPG Audio) ---
 	_load_real_stream("slice_1", ["res://assets/audio/rpg/knifeSlice.ogg", "res://assets/audio/slash.wav"])
 	_load_real_stream("slice_2", ["res://assets/audio/rpg/knifeSlice2.ogg", "res://assets/audio/slash.wav"])
 	_load_real_stream("chop_1", ["res://assets/audio/rpg/chop.ogg", "res://assets/audio/rpg/knifeSlice.ogg"])
 	_load_real_stream("draw_1", ["res://assets/audio/rpg/drawKnife1.ogg", "res://assets/audio/slash.wav"])
 	_load_real_stream("draw_2", ["res://assets/audio/rpg/drawKnife2.ogg", "res://assets/audio/slash.wav"])
 	_load_real_stream("draw_3", ["res://assets/audio/rpg/drawKnife3.ogg", "res://assets/audio/slash.wav"])
-	_load_real_stream("cloth_light", ["res://assets/audio/rpg/cloth1.ogg", "res://assets/audio/dash.wav"])
-	_load_real_stream("cloth_med", ["res://assets/audio/rpg/cloth2.ogg", "res://assets/audio/dash.wav"])
-	_load_real_stream("cloth_heavy", ["res://assets/audio/rpg/clothBelt.ogg", "res://assets/audio/dash.wav"])
+	_load_real_stream("dash_swish", ["res://assets/audio/rpg/cloth2.ogg", "res://assets/audio/dash.wav"])
+	_load_real_stream("jump_swish", ["res://assets/audio/rpg/cloth1.ogg", "res://assets/audio/dash.wav"])
 	_load_real_stream("step_1", ["res://assets/audio/rpg/footstep00.ogg", "res://assets/audio/click.wav"])
 	_load_real_stream("step_2", ["res://assets/audio/rpg/footstep01.ogg", "res://assets/audio/click.wav"])
 	_load_real_stream("step_3", ["res://assets/audio/rpg/footstep02.ogg", "res://assets/audio/click.wav"])
 
-	# 2. Nhóm Va Đập Vật Lý & Kim Loại Nặng (Impact Foley)
+	# --- B. Va Chấn Kim Loại, Giáp Trụ & Chém Trúng (Kenney Impact Sounds) ---
+	_load_real_stream("metal_light_1", ["res://assets/audio/impact/impactMetal_light_000.ogg", "res://assets/audio/slash.wav"])
+	_load_real_stream("metal_med_1",   ["res://assets/audio/impact/impactMetal_medium_000.ogg", "res://assets/audio/hit.wav"])
+	_load_real_stream("metal_med_2",   ["res://assets/audio/impact/impactMetal_medium_001.ogg", "res://assets/audio/hit.wav"])
 	_load_real_stream("metal_heavy_1", ["res://assets/audio/impact/impactMetal_heavy_000.ogg", "res://assets/audio/hit.wav"])
 	_load_real_stream("metal_heavy_2", ["res://assets/audio/impact/impactMetal_heavy_001.ogg", "res://assets/audio/hit.wav"])
 	_load_real_stream("metal_heavy_3", ["res://assets/audio/impact/impactMetal_heavy_002.ogg", "res://assets/audio/hit.wav"])
+	_load_real_stream("metal_heavy_4", ["res://assets/audio/impact/impactMetal_heavy_003.ogg", "res://assets/audio/hit.wav"])
 	_load_real_stream("plate_heavy_1", ["res://assets/audio/impact/impactPlate_heavy_000.ogg", "res://assets/audio/hit.wav"])
-	_load_real_stream("plate_heavy_2", ["res://assets/audio/impact/impactPlate_heavy_001.ogg", "res://assets/audio/hit.wav"])
 	_load_real_stream("punch_heavy_1", ["res://assets/audio/impact/impactPunch_heavy_000.ogg", "res://assets/audio/hit.wav"])
 	_load_real_stream("punch_heavy_2", ["res://assets/audio/impact/impactPunch_heavy_001.ogg", "res://assets/audio/hit.wav"])
-	_load_real_stream("punch_med_1", ["res://assets/audio/impact/impactPunch_medium_000.ogg", "res://assets/audio/hit.wav"])
-	_load_real_stream("soft_heavy_1", ["res://assets/audio/impact/impactSoft_heavy_000.ogg", "res://assets/audio/hit.wav"])
-	_load_real_stream("mining_1", ["res://assets/audio/impact/impactMining_000.ogg", "res://assets/audio/crystal.wav"])
-	_load_real_stream("bell_heavy", ["res://assets/audio/impact/impactBell_heavy_000.ogg", "res://assets/audio/crystal.wav"])
+	_load_real_stream("punch_heavy_3", ["res://assets/audio/impact/impactPunch_heavy_002.ogg", "res://assets/audio/hit.wav"])
+	_load_real_stream("soft_heavy_1",  ["res://assets/audio/impact/impactSoft_heavy_000.ogg", "res://assets/audio/hit.wav"])
 
-	# 3. Nhóm Xung Trầm Sub-Bass & Nổ Địa Chấn (Được cắt gọn max_dur nghiêm ngặt)
+	# --- C. Lực Nện Sâu Địa Chấn (Dành Riêng Cho Đòn Ghim Đất U3 & Bom) ---
 	_load_real_stream("sub_boom_1", ["res://assets/audio/scifi/lowFrequency_explosion_000.ogg", "res://assets/audio/impact/impactPunch_heavy_000.ogg"])
 	_load_real_stream("sub_boom_2", ["res://assets/audio/scifi/lowFrequency_explosion_001.ogg", "res://assets/audio/impact/impactPunch_heavy_001.ogg"])
-	_load_real_stream("exp_crunch_1", ["res://assets/audio/scifi/explosionCrunch_000.ogg", "res://assets/audio/impact/impactPlate_heavy_000.ogg"])
-	_load_real_stream("exp_crunch_2", ["res://assets/audio/scifi/explosionCrunch_001.ogg", "res://assets/audio/impact/impactPlate_heavy_001.ogg"])
-	_load_real_stream("fire_gust_1", ["res://assets/audio/scifi/thrusterFire_000.ogg", "res://assets/audio/rpg/clothBelt.ogg"])
 
 	# ==========================================================================
-	# BẢNG PHỐI ÂM TINH GỌN, TRẬT TỰ (1-2 LỚP/ĐÒN, CÓ MAX_DUR CẮT ĐUÔI TỰ ĐỘNG)
+	# BẢNG PHỐI ÂM CHUYÊN BIỆT: CHÉM KIẾM ĐẲNG CẤP AAA
 	# ==========================================================================
 
 	# --------------------------------------------------------------------------
-	# I. TRẠNG THÁI 1 (BÌNH THƯỜNG — SẮC GỌN, NHANH, DỨT KHOÁT)
+	# I. TRẠNG THÁI 1: BÌNH THƯỜNG — THIÊN HÀ KIẾM BẠCH KIM (BÉN, SẮC, THANH THOÁT)
 	# --------------------------------------------------------------------------
-	# 1. Đòn U1 thường: 1 nhát chém kiếm sắc gọn (0.20s)
+	# 1. Đòn U1: Nhát chém kiếm thép sắc lẹm xé gió (0.18s)
 	_sfx_bank["u1_slash"] = [
-		{"s": "slice_1", "vol": -1.5, "pitch": 1.06, "delay": 0.0, "max_dur": 0.20, "bus": BUS_NORMAL, "group": "SWING", "choke": true}
+		{"s": "slice_1", "vol": 0.5, "pitch": 1.06, "delay": 0.0, "max_dur": 0.18, "bus": BUS_NORMAL, "group": "SWING", "choke": true}
 	]
 
-	# 2. Đòn U2 thường: 1 nhát chém chéo thanh thoát (0.22s)
+	# 2. Đòn U2: Nhát chém chéo ngược đầm chắc, ngọt lịm (0.20s)
 	_sfx_bank["u2_slash"] = [
-		{"s": "slice_2", "vol": -1.0, "pitch": 0.98, "delay": 0.0, "max_dur": 0.22, "bus": BUS_NORMAL, "group": "SWING", "choke": true}
+		{"s": "slice_2", "vol": 1.0, "pitch": 0.98, "delay": 0.0, "max_dur": 0.20, "bus": BUS_NORMAL, "group": "SWING", "choke": true}
 	]
 
-	# 3. Đòn U3 thường: Bổ kiếm xuống + Chạm sàn đá đầm gọn (0.38s)
+	# 3. Đòn U3: Bổ dọc xé gió + Mũi kiếm nện phập nứt sàn đá (2 nhịp đanh thép 0.36s)
 	_sfx_bank["u3_heaven_shatter"] = [
-		{"s": "chop_1",        "vol": 0.0,  "pitch": 0.94, "delay": 0.0,  "max_dur": 0.24, "bus": BUS_NORMAL, "group": "SWING", "choke": true},
-		{"s": "punch_heavy_1", "vol": 0.5,  "pitch": 0.90, "delay": 0.05, "max_dur": 0.34, "bus": BUS_IMPACT, "group": "IMPACT", "choke": false}
+		{"s": "chop_1",        "vol": 1.0, "pitch": 0.96, "delay": 0.0,  "max_dur": 0.22, "bus": BUS_NORMAL, "group": "SWING",  "choke": true},
+		{"s": "metal_heavy_1", "vol": 1.5, "pitch": 1.08, "delay": 0.05, "max_dur": 0.32, "bus": BUS_IMPACT, "group": "IMPACT", "choke": false}
 	]
 
-	# 4. Chiêu I Pha 1 thường: Chém chữ X 2 nhịp thép giao nhau (0.26s)
+	# 4. Chiêu [I] Pha 1: Song kiếm lướt chém chữ X (Hai lưỡi thép giao nhau Shh-clink!)
 	_sfx_bank["i_phase1_x_cleave"] = [
-		{"s": "draw_1",  "vol": -1.5, "pitch": 1.05, "delay": 0.0,  "max_dur": 0.22, "bus": BUS_NORMAL, "group": "SWING", "choke": true},
-		{"s": "slice_2", "vol": 0.0,  "pitch": 0.95, "delay": 0.04, "max_dur": 0.24, "bus": BUS_NORMAL, "group": "SWING", "choke": false}
+		{"s": "draw_1",  "vol": 0.5, "pitch": 1.08, "delay": 0.0,   "max_dur": 0.20, "bus": BUS_NORMAL, "group": "SWING", "choke": true},
+		{"s": "slice_2", "vol": 1.0, "pitch": 1.02, "delay": 0.035, "max_dur": 0.22, "bus": BUS_NORMAL, "group": "SWING", "choke": false}
 	]
 
-	# 5. Chiêu I Pha 2 thường: Phóng sóng kiếm gió êm (0.30s)
+	# 5. Chiêu [I] Pha 2: Quét kiếm phóng Sóng Kiếm Khí rít qua không trung (0.28s)
 	_sfx_bank["i_phase2_wave_launch"] = [
-		{"s": "cloth_heavy", "vol": -0.5, "pitch": 0.92, "delay": 0.0, "max_dur": 0.30, "bus": BUS_NORMAL, "group": "SWING", "choke": false}
+		{"s": "chop_1", "vol": 1.2, "pitch": 1.22, "delay": 0.0, "max_dur": 0.26, "bus": BUS_NORMAL, "group": "SWING", "choke": false}
 	]
 
-	# 6. Chiêu I nổ cuối đường: 1 nhịp va chấn gọn (0.32s)
+	# 6. Chiêu [I] nổ cuối: Sóng kiếm khí găm nổ kim loại đanh chắc (0.30s)
 	_sfx_bank["i_wave_finale"] = [
-		{"s": "punch_heavy_2", "vol": -0.5, "pitch": 0.88, "delay": 0.0, "max_dur": 0.32, "bus": BUS_IMPACT, "group": "IMPACT", "choke": false}
+		{"s": "metal_heavy_2", "vol": 1.0, "pitch": 1.02, "delay": 0.0, "max_dur": 0.30, "bus": BUS_IMPACT, "group": "IMPACT", "choke": false}
 	]
 
 	# --------------------------------------------------------------------------
-	# II. TRẠNG THÁI 2 (KÍCH HOẠT NỘ [R] — ĐẠI KIẾM TRẦM NẶNG, UY LỰC, KHÔNG HỖN LOẠN)
+	# II. TRẠNG THÁI 2: HÓA NỘ [R] — HUYẾT LAM ĐẠI KIẾM (TRẦM HÙNG, NẶNG ĐÔ, UY LỰC)
 	# --------------------------------------------------------------------------
-	# 7. Kích hoạt Nộ [R]: Tiếng ngân đại kiếm + Xung trầm thức tỉnh gọn trong 0.48s
+	# 7. Kích hoạt Nộ [R]: Long Thần Rút Đại Kiếm Thức Tỉnh (Tiếng thép ngân trầm + Xung chấn)
 	_sfx_bank["rage_r_awaken"] = [
-		{"s": "draw_3",     "vol": 0.5,  "pitch": 0.82, "delay": 0.0,  "max_dur": 0.38, "bus": BUS_RAGE,   "group": "STATE", "choke": true},
-		{"s": "sub_boom_1", "vol": 1.5,  "pitch": 0.85, "delay": 0.02, "max_dur": 0.45, "bus": BUS_IMPACT, "group": "STATE", "choke": false},
-		{"s": "bell_heavy", "vol": -2.5, "pitch": 0.80, "delay": 0.06, "max_dur": 0.48, "bus": BUS_RAGE,   "group": "STATE", "choke": false}
+		{"s": "draw_3",        "vol": 1.8, "pitch": 0.80, "delay": 0.0,  "max_dur": 0.38, "bus": BUS_RAGE,   "group": "STATE", "choke": true},
+		{"s": "metal_heavy_1", "vol": 1.2, "pitch": 0.84, "delay": 0.03, "max_dur": 0.40, "bus": BUS_RAGE,   "group": "STATE", "choke": false},
+		{"s": "sub_boom_1",    "vol": 2.2, "pitch": 0.80, "delay": 0.05, "max_dur": 0.44, "bus": BUS_IMPACT, "group": "STATE", "choke": false}
 	]
 
-	# 8. Kết thúc Nộ [R]: Thu kiếm nhẹ nhàng (0.25s)
+	# 8. Kết thúc Nộ [R]: Thu đại kiếm dứt khoát (0.22s)
 	_sfx_bank["rage_r_expire"] = [
-		{"s": "cloth_heavy", "vol": -4.0, "pitch": 0.78, "delay": 0.0, "max_dur": 0.25, "bus": BUS_NORMAL, "group": "STATE", "choke": true}
+		{"s": "draw_1", "vol": -2.0, "pitch": 0.82, "delay": 0.0, "max_dur": 0.22, "bus": BUS_NORMAL, "group": "STATE", "choke": true}
 	]
 
-	# 9. Đòn U1 NỘ: Đại kiếm trầm + Thép hạng nặng (Đọng lại 0.34s)
+	# 9. Đòn U1 NỘ: Đại kiếm Huyết Lam chém ngang xé toạc không gian (0.30s)
 	_sfx_bank["u1_rage"] = [
-		{"s": "slice_1",       "vol": 0.5,  "pitch": 0.76, "delay": 0.0,  "max_dur": 0.32, "bus": BUS_RAGE, "group": "SWING", "choke": true},
-		{"s": "metal_heavy_1", "vol": -0.5, "pitch": 0.88, "delay": 0.02, "max_dur": 0.34, "bus": BUS_RAGE, "group": "SWING", "choke": false}
+		{"s": "slice_1",       "vol": 1.5, "pitch": 0.78, "delay": 0.0,  "max_dur": 0.28, "bus": BUS_RAGE, "group": "SWING", "choke": true},
+		{"s": "metal_heavy_2", "vol": 0.8, "pitch": 0.82, "delay": 0.02, "max_dur": 0.30, "bus": BUS_RAGE, "group": "SWING", "choke": false}
 	]
 
-	# 10. Đòn U2 NỘ: Song đại kiếm trầm đầm (Đọng lại 0.36s)
+	# 10. Đòn U2 NỘ: Đại kiếm chém ngược cuồng bạo, âm trầm cực đầm (0.32s)
 	_sfx_bank["u2_rage"] = [
-		{"s": "slice_2",       "vol": 0.5,  "pitch": 0.72, "delay": 0.0,  "max_dur": 0.34, "bus": BUS_RAGE, "group": "SWING", "choke": true},
-		{"s": "metal_heavy_2", "vol": 0.0,  "pitch": 0.84, "delay": 0.02, "max_dur": 0.36, "bus": BUS_RAGE, "group": "SWING", "choke": false}
+		{"s": "slice_2",       "vol": 1.5, "pitch": 0.74, "delay": 0.0,  "max_dur": 0.30, "bus": BUS_RAGE, "group": "SWING", "choke": true},
+		{"s": "metal_heavy_3", "vol": 0.8, "pitch": 0.78, "delay": 0.02, "max_dur": 0.32, "bus": BUS_RAGE, "group": "SWING", "choke": false}
 	]
 
-	# 11. Đòn U3 NỘ ("Huyết Lam Long Thần Giáng" — 3 Pha trật tự khớp với 5 lưỡi kiếm đọng lại 0.55s)
+	# 11. Đòn U3 NỘ: "Huyết Lam Long Thần Giáng" (3 Nhịp thép ghim lòng đất đọng lại 0.50s)
 	_sfx_bank["u3_rage_dragon_fall"] = [
-		# Pha 1 (0.00s): Giáng đại kiếm
-		{"s": "chop_1",        "vol": 1.0,  "pitch": 0.72, "delay": 0.0,  "max_dur": 0.28, "bus": BUS_RAGE,   "group": "SWING",  "choke": true},
-		# Pha 2 (0.06s): 5 Lưỡi kiếm cắm phập xuống đất (Địa chấn trầm gọn)
-		{"s": "sub_boom_1",    "vol": 2.0,  "pitch": 0.82, "delay": 0.06, "max_dur": 0.42, "bus": BUS_IMPACT, "group": "IMPACT", "choke": true},
-		{"s": "plate_heavy_1", "vol": 0.5,  "pitch": 0.78, "delay": 0.07, "max_dur": 0.38, "bus": BUS_RAGE,   "group": "IMPACT", "choke": false},
-		# Pha 3 (0.20s): Dư âm kim loại ngân trầm khi 5 lưỡi kiếm phình to trên đất
-		{"s": "bell_heavy",    "vol": -2.0, "pitch": 0.76, "delay": 0.20, "max_dur": 0.45, "bus": BUS_RAGE,   "group": "SWING",  "choke": false}
+		# Nhịp 1 (0.00s): Đại kiếm bổ xé trời
+		{"s": "chop_1",        "vol": 2.0, "pitch": 0.70, "delay": 0.0,  "max_dur": 0.25, "bus": BUS_RAGE,   "group": "SWING",  "choke": true},
+		# Nhịp 2 (0.05s): 5 Lưỡi đại kiếm cắm phập nứt toác lòng đất
+		{"s": "metal_heavy_1", "vol": 2.2, "pitch": 0.75, "delay": 0.05, "max_dur": 0.40, "bus": BUS_IMPACT, "group": "IMPACT", "choke": true},
+		{"s": "sub_boom_1",    "vol": 2.5, "pitch": 0.78, "delay": 0.06, "max_dur": 0.45, "bus": BUS_IMPACT, "group": "IMPACT", "choke": false},
+		# Nhịp 3 (0.20s): Tiếng thép nặng ngân rền khi kiếm khí phình to
+		{"s": "metal_heavy_4", "vol": 0.5, "pitch": 0.72, "delay": 0.20, "max_dur": 0.35, "bus": BUS_RAGE,   "group": "SWING",  "choke": false}
 	]
 
-	# 12. Chiêu I Pha 1 NỘ (6 Lưỡi Chữ X): 2 nhịp đại kiếm cắt không gian (0.38s)
+	# 12. Chiêu [I] Pha 1 NỘ: Lục Kiếm Khí Chữ X chém đứt hư không (0.35s)
 	_sfx_bank["i_rage_hexa_cleave"] = [
-		{"s": "draw_2",        "vol": 0.5, "pitch": 0.80, "delay": 0.0,  "max_dur": 0.30, "bus": BUS_RAGE,   "group": "SWING",  "choke": true},
-		{"s": "metal_heavy_3", "vol": 1.0, "pitch": 0.82, "delay": 0.04, "max_dur": 0.36, "bus": BUS_RAGE,   "group": "SWING",  "choke": false},
-		{"s": "sub_boom_2",    "vol": 0.5, "pitch": 0.90, "delay": 0.05, "max_dur": 0.38, "bus": BUS_IMPACT, "group": "IMPACT", "choke": false}
+		{"s": "draw_3",        "vol": 1.5, "pitch": 0.78, "delay": 0.0,  "max_dur": 0.28, "bus": BUS_RAGE,   "group": "SWING",  "choke": true},
+		{"s": "metal_heavy_3", "vol": 1.5, "pitch": 0.80, "delay": 0.03, "max_dur": 0.34, "bus": BUS_RAGE,   "group": "SWING",  "choke": false},
+		{"s": "sub_boom_2",    "vol": 1.2, "pitch": 0.85, "delay": 0.05, "max_dur": 0.36, "bus": BUS_IMPACT, "group": "IMPACT", "choke": false}
 	]
 
-	# 13. Chiêu I Pha 2 NỘ (Đại Sóng Kiếm 5 Cánh): Luồng sóng trầm mượt (0.42s, không nổ lụp bụp dọc đường)
+	# 13. Chiêu [I] Pha 2 NỘ: Ngũ Dực Đại Sóng Kiếm càn quét mặt đất (0.38s)
 	_sfx_bank["i_rage_five_wing_wave"] = [
-		{"s": "sub_boom_1",  "vol": 1.5,  "pitch": 0.82, "delay": 0.0,  "max_dur": 0.40, "bus": BUS_IMPACT, "group": "IMPACT", "choke": false},
-		{"s": "fire_gust_1", "vol": -0.5, "pitch": 0.80, "delay": 0.02, "max_dur": 0.42, "bus": BUS_RAGE,   "group": "SWING",  "choke": false},
-		{"s": "bell_heavy",  "vol": -3.0, "pitch": 0.74, "delay": 0.24, "max_dur": 0.38, "bus": BUS_RAGE,   "group": "SWING",  "choke": false}
+		{"s": "chop_1",        "vol": 2.0, "pitch": 0.75, "delay": 0.0,  "max_dur": 0.35, "bus": BUS_RAGE,   "group": "SWING",  "choke": false},
+		{"s": "metal_heavy_2", "vol": 1.5, "pitch": 0.78, "delay": 0.02, "max_dur": 0.38, "bus": BUS_IMPACT, "group": "IMPACT", "choke": false},
+		{"s": "sub_boom_1",    "vol": 1.8, "pitch": 0.80, "delay": 0.04, "max_dur": 0.38, "bus": BUS_IMPACT, "group": "IMPACT", "choke": false}
 	]
 
 	# --------------------------------------------------------------------------
-	# III. CÁC KỸ NĂNG CÒN LẠI (XOAY 360 [O], BOM [P], LƯỚT [SPACE], NHẢY [C], TRÚNG ĐÒN)
+	# III. KỸ NĂNG VŨ KHÍ, DI CHUYỂN & VA CHẠM THỰC TẾ
 	# --------------------------------------------------------------------------
-	# 14. Chiêu O (Xoay 360 độ): 3 nhịp vung kiếm tách bạch theo vòng xoay
+	# 14. Chiêu [O] / Q: Lốc Xoáy Kiếm 360° (3 nhịp vung kiếm xoay tròn Shing-Shing-SHING!)
 	_sfx_bank["o_whirlwind_spin"] = [
-		{"s": "slice_1", "vol": -0.5, "pitch": 0.92, "delay": 0.0,  "max_dur": 0.16, "bus": BUS_NORMAL, "group": "SWING", "choke": true},
-		{"s": "slice_2", "vol": 0.0,  "pitch": 1.00, "delay": 0.13, "max_dur": 0.16, "bus": BUS_NORMAL, "group": "SWING", "choke": false},
-		{"s": "slice_1", "vol": 0.5,  "pitch": 1.08, "delay": 0.26, "max_dur": 0.18, "bus": BUS_NORMAL, "group": "SWING", "choke": false}
+		{"s": "slice_1", "vol": 0.5, "pitch": 0.98, "delay": 0.0,  "max_dur": 0.16, "bus": BUS_NORMAL, "group": "SWING", "choke": true},
+		{"s": "slice_2", "vol": 0.8, "pitch": 1.05, "delay": 0.12, "max_dur": 0.16, "bus": BUS_NORMAL, "group": "SWING", "choke": false},
+		{"s": "draw_1",  "vol": 1.0, "pitch": 1.12, "delay": 0.24, "max_dur": 0.18, "bus": BUS_NORMAL, "group": "SWING", "choke": false}
 	]
 
-	# 15. Chiêu P (Ném bom): Tiếng vung tay gọn (0.16s)
+	# 15. Chiêu [P] / E: Ném bom lôi vụ (Vung tay ném dứt khoát 0.15s)
 	_sfx_bank["p_bomb_throw"] = [
-		{"s": "cloth_med", "vol": -1.5, "pitch": 0.96, "delay": 0.0, "max_dur": 0.16, "bus": BUS_NORMAL, "group": "MOVEMENT", "choke": true}
+		{"s": "dash_swish", "vol": -1.0, "pitch": 1.05, "delay": 0.0, "max_dur": 0.15, "bus": BUS_NORMAL, "group": "MOVEMENT", "choke": true}
 	]
 
-	# 16. Chiêu P (Bom nổ): 1 cú nổ trầm gọn (0.38s)
+	# 16. Chiêu [P] / E: Bom phát nổ (1 cú nổ đầm và va chấn thép 0.35s)
 	_sfx_bank["p_bomb_thunder_explode"] = [
-		{"s": "sub_boom_2",   "vol": 1.5,  "pitch": 0.85, "delay": 0.0,  "max_dur": 0.36, "bus": BUS_IMPACT, "group": "IMPACT", "choke": true},
-		{"s": "exp_crunch_1", "vol": -0.5, "pitch": 0.92, "delay": 0.02, "max_dur": 0.38, "bus": BUS_IMPACT, "group": "IMPACT", "choke": false}
+		{"s": "sub_boom_2",    "vol": 2.2, "pitch": 0.85, "delay": 0.0,  "max_dur": 0.35, "bus": BUS_IMPACT, "group": "IMPACT", "choke": true},
+		{"s": "metal_heavy_1", "vol": 1.2, "pitch": 0.92, "delay": 0.02, "max_dur": 0.35, "bus": BUS_IMPACT, "group": "IMPACT", "choke": false}
 	]
 
-	# 17. Chiêu P (Đốt DoT): Cực nhẹ (-18 dB) để không làm ồn trận đấu
+	# 17. Chiêu [P] / E: Nhịp giật sét DoT trong khói (Bén nhẹ, không ồn ào)
 	_sfx_bank["p_bomb_dot_zap"] = [
-		{"s": "step_1", "vol": -18.0, "pitch": 1.55, "delay": 0.0, "max_dur": 0.06, "bus": BUS_NORMAL, "group": "FOOTSTEP", "choke": true}
+		{"s": "draw_1", "vol": -16.0, "pitch": 1.65, "delay": 0.0, "max_dur": 0.08, "bus": BUS_NORMAL, "group": "FOOTSTEP", "choke": true}
 	]
 
-	# 18. Phím Space (Lướt): Tiếng lướt gió gọn (0.20s)
+	# 18. Phím [Space] Lướt Né: Tiếng lướt gió tốc độ cao sạch sẽ (0.18s)
 	_sfx_bank["dash_space"] = [
-		{"s": "cloth_heavy", "vol": -1.0, "pitch": 1.02, "delay": 0.0, "max_dur": 0.20, "bus": BUS_NORMAL, "group": "MOVEMENT", "choke": true}
+		{"s": "dash_swish", "vol": -0.5, "pitch": 1.15, "delay": 0.0, "max_dur": 0.18, "bus": BUS_NORMAL, "group": "MOVEMENT", "choke": true}
 	]
 
-	# 19. Phím C (Nhảy): Nhún chân gọn (0.16s)
+	# 19. Phím [C] Nhảy: Bật gót chân nhẹ nhàng (0.15s)
 	_sfx_bank["jump_c"] = [
-		{"s": "cloth_light", "vol": -2.0, "pitch": 1.05, "delay": 0.0, "max_dur": 0.16, "bus": BUS_NORMAL, "group": "MOVEMENT", "choke": true}
+		{"s": "jump_swish", "vol": -1.5, "pitch": 1.10, "delay": 0.0, "max_dur": 0.15, "bus": BUS_NORMAL, "group": "MOVEMENT", "choke": true}
 	]
 
-	# 20. Bước chân trên đá: Nhẹ nhàng, êm ái (-11 dB, 0.10s)
+	# 20. Bước chân trên nền đá: Tiếng gót giày sắt gõ nhẹ tự nhiên (-10 dB, tự ngắt khi giao tranh)
 	_sfx_bank["footstep_stone"] = [
-		{"s": "step_1", "vol": -11.5, "pitch": 0.95, "delay": 0.0, "max_dur": 0.10, "bus": BUS_NORMAL, "group": "FOOTSTEP", "choke": true}
+		{"s": "step_1", "vol": -10.0, "pitch": 0.96, "delay": 0.0, "max_dur": 0.10, "bus": BUS_NORMAL, "group": "FOOTSTEP", "choke": true}
 	]
 
-	# 21. Chém trúng Bot: 1 tiếng va chạm đầm gọn (0.18s)
+	# 21. CHÉM TRÚNG BOT: LƯỠI THÉP CẮT XUYÊN GIÁP THỊT CỰC KỲ ĐÃ TAI (Meat & Steel Cleave)
 	_sfx_bank["hit_enemy_flesh_metal"] = [
-		{"s": "punch_heavy_1", "vol": -1.5, "pitch": 0.96, "delay": 0.0, "max_dur": 0.18, "bus": BUS_IMPACT, "group": "IMPACT", "choke": false}
+		{"s": "slice_1",       "vol": 0.5, "pitch": 1.08, "delay": 0.0,  "max_dur": 0.16, "bus": BUS_NORMAL, "group": "IMPACT", "choke": false},
+		{"s": "metal_med_1",   "vol": 1.2, "pitch": 1.02, "delay": 0.01, "max_dur": 0.18, "bus": BUS_IMPACT, "group": "IMPACT", "choke": false}
 	]
 
-	# 22. Bot bị tiêu diệt: Tiếng gục ngã gọn (0.28s)
+	# 22. Tiêu diệt Bot: Giáp sắt đổ gục dứt khoát (0.25s)
 	_sfx_bank["enemy_death_burst"] = [
-		{"s": "soft_heavy_1", "vol": 0.0, "pitch": 0.88, "delay": 0.0, "max_dur": 0.28, "bus": BUS_IMPACT, "group": "IMPACT", "choke": false}
+		{"s": "metal_heavy_4", "vol": 1.0, "pitch": 0.88, "delay": 0.0,  "max_dur": 0.25, "bus": BUS_IMPACT, "group": "IMPACT", "choke": false},
+		{"s": "soft_heavy_1",  "vol": 0.5, "pitch": 0.84, "delay": 0.02, "max_dur": 0.25, "bus": BUS_IMPACT, "group": "IMPACT", "choke": false}
 	]
 
-	# 23. BGM Entry giữ cho QA Test
+	# 23. BGM Entry (Giữ chuẩn kiểm thử hệ thống)
 	_sfx_bank["bgm_arena_combat_loop"] = [
 		{"s": "step_1", "vol": -40.0, "pitch": 1.0, "delay": 0.0, "max_dur": 0.05, "bus": BUS_AURA, "group": "FOOTSTEP", "choke": false}
 	]
 
-	print("🎵 [KayKitAudioDirector] Clean AAA Audio Bank initialized (%d streams, %d structured events, Envelope Trim & Voice Choking enabled)." % [_raw_streams.size(), _sfx_bank.size()])
+	print("🗡️ [KayKitAudioDirector] Pure Blade Audio Bank active (%d authentic foley streams, %d blade events, 0%% noise clutter)." % [_raw_streams.size(), _sfx_bank.size()])
 
 # ==============================================================================
-# 3. BỘ PHÁT THÔNG MINH CÓ NGẮT KÊNH (VOICE CHOKING) & CẮT ĐUÔI (ENVELOPE TRIM)
+# 3. BỘ PHÁT ÂM THANH CÓ CẮT ĐUÔI TỰ ĐỘNG (MAX_DUR) & NHƯỜNG KÊNH (VOICE CHOKING)
 # ==============================================================================
 func _play_internal(sfx_id: String, volume_offset_db: float, pitch_override: float) -> void:
 	if not _sfx_bank.has(sfx_id):
@@ -447,14 +449,14 @@ func _play_internal(sfx_id: String, volume_offset_db: float, pitch_override: flo
 
 	var now := float(Time.get_ticks_msec()) / 1000.0
 
-	# Chống dội âm khi chém trúng nhiều Bot cùng lúc (hit_enemy_flesh_metal khóa 0.085s)
-	var min_delay := 0.085 if sfx_id == "hit_enemy_flesh_metal" else MIN_RETRIGGER_DELAY
+	# Chống spam dội tiếng khi chém trúng nhiều quái vật cùng 1 tick
+	var min_delay := 0.075 if sfx_id == "hit_enemy_flesh_metal" else MIN_RETRIGGER_DELAY
 	if _last_play_time.has(sfx_id):
 		if now - float(_last_play_time[sfx_id]) < min_delay:
 			return
 	_last_play_time[sfx_id] = now
 
-	# Nếu đang tung đòn đánh/kỹ năng thì ghi nhận thời gian để tạm ngưng tiếng bước chân trong 0.30s
+	# Tự động ngắt tiếng bước chân khi đang vung kiếm combat để âm trường sạch sẽ 100%
 	if sfx_id != "footstep_stone" and sfx_id != "p_bomb_dot_zap":
 		_last_combat_action_time = now
 	elif sfx_id == "footstep_stone":
@@ -468,13 +470,20 @@ func _play_internal(sfx_id: String, volume_offset_db: float, pitch_override: flo
 		return
 
 	var layers: Array = _sfx_bank[sfx_id]
-	var jitter_pitch := pitch_override if pitch_override > 0.0 else randf_range(0.97, 1.03)
+	var jitter_pitch := pitch_override if pitch_override > 0.0 else randf_range(0.975, 1.025)
 
 	for layer in layers:
 		var stream_key: String = layer.get("s", "slice_1")
 		if sfx_id == "footstep_stone":
 			var steps := ["step_1", "step_2", "step_3"]
 			stream_key = steps[play_count % steps.size()]
+		elif sfx_id == "hit_enemy_flesh_metal":
+			if stream_key == "slice_1":
+				var slices := ["slice_1", "slice_2"]
+				stream_key = slices[play_count % slices.size()]
+			elif stream_key == "metal_med_1":
+				var metals := ["metal_med_1", "metal_med_2", "metal_light_1"]
+				stream_key = metals[play_count % metals.size()]
 
 		var stream: AudioStream = _raw_streams.get(stream_key, null)
 		if stream == null:
@@ -545,7 +554,7 @@ func _trigger_controlled_layer(
 		player.bus = "Master"
 
 	player.stream = stream
-	player.volume_db = clampf(vol_db, -45.0, 3.0)
+	player.volume_db = clampf(vol_db, -45.0, 4.0)
 	player.pitch_scale = clampf(pitch_val, 0.55, 1.85)
 
 	if player.is_inside_tree():
@@ -554,10 +563,10 @@ func _trigger_controlled_layer(
 			_active_group_players[group_name] = []
 		_active_group_players[group_name].append(player)
 
-		# Bộ cắt đuôi tự động (Envelope Trim): Đảm bảo không bao giờ ngân lê thê gây lộn xộn
-		var hold_time := maxf(0.04, max_dur - 0.05)
+		# Cắt đuôi tự động (Envelope Fade-out): Triệt tiêu hoàn toàn âm ngân thừa
+		var hold_time := maxf(0.04, max_dur - 0.045)
 		var env_tw := create_tween()
 		_player_fade_tweens[player] = env_tw
 		env_tw.tween_interval(hold_time)
-		env_tw.tween_property(player, "volume_db", -48.0, 0.05)
+		env_tw.tween_property(player, "volume_db", -48.0, 0.045)
 		env_tw.tween_callback(player.stop)

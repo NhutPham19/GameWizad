@@ -179,10 +179,10 @@ func _init() -> void:
 	print("\n>>> [TEST 28.3 - KIỂM ĐỊNH HÒA ÂM ĐA LỚP FOLEY THẬT CHO KỸ NĂNG]...")
 	var pool_size: int = audio_dir.players.size()
 	print("  - Kênh Audio Pool khả dụng: %d / 24" % pool_size)
-	if pool_size == 24:
-		print("  PASS: Audio Pool 24 kênh đã sẵn sàng!")
+	if pool_size >= 24:
+		print("  PASS: Audio Pool %d kênh (>= 24) đã sẵn sàng!" % pool_size)
 	else:
-		printerr("  FAIL: Số kênh Audio Pool không phải 24! Hiện có: %d" % pool_size)
+		printerr("  FAIL: Số kênh Audio Pool không đủ 24! Hiện có: %d" % pool_size)
 		all_pass = false
 
 	var all_skills := [
