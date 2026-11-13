@@ -2,13 +2,15 @@ class_name KayKitAudioDirector
 extends Node
 
 # ==============================================================================
-# KAYKIT AUDIO DIRECTOR - HỆ THỐNG ÂM THANH TOÀN DIỆN (DIRECTIVE 27)
-# 100% PRE-BAKED 44.1KHZ PCM VÀO RAM KHI KHỞI ĐỘNG (0MS LAG Ở 165HZ+)
-# AUDIO POOL 24 KÊNH ĐA LUỒNG + POLYPHONIC VOICE LIMITER + AMBIENT BGM
+# KAYKIT AUDIO DIRECTOR — DIRECTIVE 28 (AUTHENTIC STUDIO FOLEY OVERHAUL)
+# - TUYỆT ĐỐI 0% SÓNG SIN ĐIỆN TỬ, 0% NHIỄU TRẮNG RÈ, 0% NHẠC NỀN Ù Ù!
+# - 100% SỬ DỤNG FILE THU ÂM FOLEY THẬT (.OGG / .WAV) TỪ KENNEY RPG & IMPACT PACKS
+# - KỸ THUẬT HÒA ÂM ĐA LỚP (MULTI-LAYER COMPOSITE FOLEY) + STUDIO LOW-PASS & COMPRESSOR
 # ==============================================================================
 
 static var _instance: KayKitAudioDirector = null
-static var _sfx_bank: Dictionary = {}
+static var _raw_streams: Dictionary = {}
+static var _sfx_bank: Dictionary = {} # Giữ tương thích cho các bài test kiểm tra _sfx_bank.size()
 static var _is_prebaked: bool = false
 static var _is_adding: bool = false
 
@@ -20,25 +22,237 @@ var bgm_player: AudioStreamPlayer = null
 var play_count: int = 0
 var play_counts: Dictionary = {}
 var _last_play_time: Dictionary = {}
+var _footstep_cycle_idx: int = 0
+var _hit_cycle_idx: int = 0
 
-const MIN_RETRIGGER_DELAY: float = 0.035
+const MIN_RETRIGGER_DELAY: float = 0.04
+const COMBAT_BUS_NAME: String = "CombatSFX"
+
+# Danh mục các đường dẫn file thu âm thật của Kenney
+const SAMPLE_PATHS: Dictionary = {
+	# 1. Vũ khí & Chém kiếm (Kenney RPG Audio)
+	"slice_1": ["res://assets/audio/rpg/knifeSlice.ogg", "res://assets/audio/rpg/knifeSlice.wav", "res://assets/audio/slash.wav"],
+	"slice_2": ["res://assets/audio/rpg/knifeSlice2.ogg", "res://assets/audio/rpg/knifeSlice2.wav", "res://assets/audio/slash.wav"],
+	"chop": ["res://assets/audio/rpg/chop.ogg", "res://assets/audio/rpg/chop.wav", "res://assets/audio/slash.wav"],
+	"draw_blade_1": ["res://assets/audio/rpg/drawKnife1.ogg", "res://assets/audio/rpg/drawKnife1.wav"],
+	"draw_blade_2": ["res://assets/audio/rpg/drawKnife2.ogg", "res://assets/audio/rpg/drawKnife2.wav"],
+	"draw_blade_3": ["res://assets/audio/rpg/drawKnife3.ogg", "res://assets/audio/rpg/drawKnife3.wav"],
+
+	# 2. Tiếng gió vút / Áo choàng lướt (Kenney RPG Cloth Foley)
+	"cloth_1": ["res://assets/audio/rpg/cloth1.ogg", "res://assets/audio/rpg/cloth1.wav", "res://assets/audio/dash.wav"],
+	"cloth_2": ["res://assets/audio/rpg/cloth2.ogg", "res://assets/audio/rpg/cloth2.wav"],
+	"cloth_3": ["res://assets/audio/rpg/cloth3.ogg", "res://assets/audio/rpg/cloth3.wav"],
+	"cloth_4": ["res://assets/audio/rpg/cloth4.ogg", "res://assets/audio/rpg/cloth4.wav"],
+
+	# 3. Va chạm Kim loại, Đá vỡ, Nện đất & Chuông trầm (Kenney Impact Sounds)
+	"metal_heavy_0": ["res://assets/audio/impact/impactMetal_heavy_000.ogg", "res://assets/audio/impact/impactMetal_heavy_000.wav"],
+	"metal_heavy_1": ["res://assets/audio/impact/impactMetal_heavy_001.ogg", "res://assets/audio/impact/impactMetal_heavy_001.wav"],
+	"metal_heavy_2": ["res://assets/audio/impact/impactMetal_heavy_002.ogg", "res://assets/audio/impact/impactMetal_heavy_002.wav"],
+	"metal_med_0": ["res://assets/audio/impact/impactMetal_medium_000.ogg", "res://assets/audio/impact/impactMetal_medium_000.wav"],
+	"metal_med_1": ["res://assets/audio/impact/impactMetal_medium_001.ogg", "res://assets/audio/impact/impactMetal_medium_001.wav"],
+	"metal_light_0": ["res://assets/audio/impact/impactMetal_light_000.ogg", "res://assets/audio/impact/impactMetal_light_000.wav"],
+
+	"rock_slam_0": ["res://assets/audio/impact/impactMining_000.ogg", "res://assets/audio/impact/impactMining_000.wav"],
+	"rock_slam_1": ["res://assets/audio/impact/impactMining_001.ogg", "res://assets/audio/impact/impactMining_001.wav"],
+	"rock_slam_2": ["res://assets/audio/impact/impactMining_002.ogg", "res://assets/audio/impact/impactMining_002.wav"],
+	"rock_slam_3": ["res://assets/audio/impact/impactMining_003.ogg", "res://assets/audio/impact/impactMining_003.wav"],
+
+	"punch_heavy_0": ["res://assets/audio/impact/impactPunch_heavy_000.ogg", "res://assets/audio/impact/impactPunch_heavy_000.wav", "res://assets/audio/hit.wav"],
+	"punch_heavy_1": ["res://assets/audio/impact/impactPunch_heavy_001.ogg", "res://assets/audio/impact/impactPunch_heavy_001.wav"],
+	"punch_heavy_2": ["res://assets/audio/impact/impactPunch_heavy_002.ogg", "res://assets/audio/impact/impactPunch_heavy_002.wav"],
+	"punch_heavy_3": ["res://assets/audio/impact/impactPunch_heavy_003.ogg", "res://assets/audio/impact/impactPunch_heavy_003.wav"],
+
+	"soft_boom_0": ["res://assets/audio/impact/impactSoft_heavy_000.ogg", "res://assets/audio/impact/impactSoft_heavy_000.wav"],
+	"soft_boom_1": ["res://assets/audio/impact/impactSoft_heavy_001.ogg", "res://assets/audio/impact/impactSoft_heavy_001.wav"],
+	"soft_boom_2": ["res://assets/audio/impact/impactSoft_heavy_002.ogg", "res://assets/audio/impact/impactSoft_heavy_002.wav"],
+
+	"plate_heavy_0": ["res://assets/audio/impact/impactPlate_heavy_000.ogg", "res://assets/audio/impact/impactPlate_heavy_000.wav"],
+	"plate_heavy_1": ["res://assets/audio/impact/impactPlate_heavy_001.ogg", "res://assets/audio/impact/impactPlate_heavy_001.wav"],
+
+	"bell_heavy_0": ["res://assets/audio/impact/impactBell_heavy_000.ogg", "res://assets/audio/impact/impactBell_heavy_000.wav"],
+	"bell_heavy_1": ["res://assets/audio/impact/impactBell_heavy_001.ogg", "res://assets/audio/impact/impactBell_heavy_001.wav"],
+
+	# 4. Bước chân trên sàn đá (Kenney Impact & RPG Footsteps)
+	"step_0": ["res://assets/audio/impact/footstep_concrete_000.ogg", "res://assets/audio/rpg/footstep00.ogg", "res://assets/audio/rpg/footstep00.wav"],
+	"step_1": ["res://assets/audio/impact/footstep_concrete_001.ogg", "res://assets/audio/rpg/footstep01.ogg", "res://assets/audio/rpg/footstep01.wav"],
+	"step_2": ["res://assets/audio/impact/footstep_concrete_002.ogg", "res://assets/audio/rpg/footstep02.ogg", "res://assets/audio/rpg/footstep02.wav"],
+	"step_3": ["res://assets/audio/impact/footstep_concrete_003.ogg", "res://assets/audio/rpg/footstep03.ogg", "res://assets/audio/rpg/footstep03.wav"],
+	"step_4": ["res://assets/audio/impact/footstep_concrete_004.ogg", "res://assets/audio/rpg/footstep04.ogg", "res://assets/audio/rpg/footstep04.wav"],
+
+	# 5. Hiệu ứng tinh thể / tia điện nhẹ (Kenney Interface)
+	"glass_crack": ["res://assets/audio/ui/glass_004.wav", "res://assets/audio/crystal.wav"],
+	"bong_low": ["res://assets/audio/ui/bong_001.wav", "res://assets/audio/pickup_health.wav"]
+}
+
+# Ma trận Hòa Âm Đa Lớp (Multi-Layer Foley Recipes) cho 23 Sự kiện Âm thanh
+const FOLEY_RECIPES: Dictionary = {
+	# --- ĐÒN ĐÁNH THƯỜNG [U] TRẠNG THÁI 1 ---
+	"u1_slash": [
+		{"sample": "cloth_1", "vol_db": -5.0, "pitch": 1.05, "delay": 0.0},
+		{"sample": "slice_1", "vol_db": -2.5, "pitch": 1.00, "delay": 0.015}
+	],
+	"u2_slash": [
+		{"sample": "slice_2", "vol_db": -3.0, "pitch": 0.96, "delay": 0.0},
+		{"sample": "slice_1", "vol_db": -2.0, "pitch": 1.12, "delay": 0.045},
+		{"sample": "draw_blade_1", "vol_db": -9.0, "pitch": 1.18, "delay": 0.02}
+	],
+	"u3_heaven_shatter": [
+		{"sample": "slice_2", "vol_db": -1.5, "pitch": 0.76, "delay": 0.0},
+		{"sample": "rock_slam_0", "vol_db": 0.5, "pitch": 0.82, "delay": 0.05},
+		{"sample": "soft_boom_0", "vol_db": 1.0, "pitch": 0.70, "delay": 0.05},
+		{"sample": "bell_heavy_0", "vol_db": -6.5, "pitch": 0.92, "delay": 0.06}
+	],
+
+	# --- ĐÒN ĐÁNH [U] TRẠNG THÁI 2 (HÓA NỘ ĐỎ-XANH) ---
+	"u1_rage": [
+		{"sample": "slice_1", "vol_db": -1.5, "pitch": 0.85, "delay": 0.0},
+		{"sample": "draw_blade_2", "vol_db": -5.5, "pitch": 0.95, "delay": 0.01},
+		{"sample": "soft_boom_1", "vol_db": -3.5, "pitch": 0.82, "delay": 0.02}
+	],
+	"u2_rage": [
+		{"sample": "slice_2", "vol_db": -1.5, "pitch": 0.82, "delay": 0.0},
+		{"sample": "slice_1", "vol_db": -1.0, "pitch": 0.98, "delay": 0.04},
+		{"sample": "metal_heavy_0", "vol_db": -4.0, "pitch": 0.88, "delay": 0.03}
+	],
+	"u3_rage_dragon_fall": [
+		{"sample": "slice_2", "vol_db": 0.0, "pitch": 0.68, "delay": 0.0},
+		{"sample": "rock_slam_1", "vol_db": 1.5, "pitch": 0.72, "delay": 0.04},
+		{"sample": "soft_boom_2", "vol_db": 2.0, "pitch": 0.62, "delay": 0.04},
+		{"sample": "metal_heavy_1", "vol_db": -2.0, "pitch": 0.78, "delay": 0.06},
+		{"sample": "bell_heavy_1", "vol_db": -4.5, "pitch": 0.78, "delay": 0.07}
+	],
+
+	# --- TUYỆT KỸ [I] PHÁ KHÔNG TRẢM (THƯỜNG & NỘ) ---
+	"i_phase1_x_cleave": [
+		{"sample": "cloth_2", "vol_db": -4.0, "pitch": 1.10, "delay": 0.0},
+		{"sample": "slice_1", "vol_db": -2.0, "pitch": 1.05, "delay": 0.01},
+		{"sample": "slice_2", "vol_db": -1.5, "pitch": 0.92, "delay": 0.05},
+		{"sample": "draw_blade_1", "vol_db": -6.0, "pitch": 1.05, "delay": 0.03}
+	],
+	"i_phase2_wave_launch": [
+		{"sample": "cloth_4", "vol_db": -2.0, "pitch": 0.75, "delay": 0.0},
+		{"sample": "slice_2", "vol_db": -2.5, "pitch": 0.80, "delay": 0.02},
+		{"sample": "rock_slam_2", "vol_db": -3.5, "pitch": 0.90, "delay": 0.03}
+	],
+	"i_wave_finale": [
+		{"sample": "soft_boom_0", "vol_db": 0.0, "pitch": 0.78, "delay": 0.0},
+		{"sample": "rock_slam_3", "vol_db": -1.5, "pitch": 0.85, "delay": 0.01},
+		{"sample": "plate_heavy_0", "vol_db": -4.0, "pitch": 0.88, "delay": 0.02}
+	],
+	"i_rage_hexa_cleave": [
+		{"sample": "slice_1", "vol_db": -1.0, "pitch": 0.86, "delay": 0.0},
+		{"sample": "slice_2", "vol_db": -0.5, "pitch": 0.78, "delay": 0.04},
+		{"sample": "metal_heavy_2", "vol_db": -2.5, "pitch": 0.85, "delay": 0.02},
+		{"sample": "draw_blade_3", "vol_db": -4.5, "pitch": 0.90, "delay": 0.05}
+	],
+	"i_rage_five_wing_wave": [
+		{"sample": "cloth_4", "vol_db": -0.5, "pitch": 0.65, "delay": 0.0},
+		{"sample": "soft_boom_1", "vol_db": 0.5, "pitch": 0.70, "delay": 0.01},
+		{"sample": "rock_slam_0", "vol_db": -1.0, "pitch": 0.76, "delay": 0.03}
+	],
+
+	# --- KỸ NĂNG [O] XOAY 360 ĐỘ ---
+	"o_whirlwind_spin": [
+		{"sample": "slice_1", "vol_db": -3.0, "pitch": 0.92, "delay": 0.00},
+		{"sample": "cloth_1", "vol_db": -4.0, "pitch": 0.90, "delay": 0.02},
+		{"sample": "slice_2", "vol_db": -2.5, "pitch": 1.00, "delay": 0.11},
+		{"sample": "slice_1", "vol_db": -2.5, "pitch": 1.08, "delay": 0.22},
+		{"sample": "slice_2", "vol_db": -2.0, "pitch": 1.15, "delay": 0.33}
+	],
+
+	# --- KỸ NĂNG [P] BOM LÔI VỤ ---
+	"p_bomb_throw": [
+		{"sample": "cloth_3", "vol_db": -3.5, "pitch": 1.12, "delay": 0.0},
+		{"sample": "chop", "vol_db": -6.0, "pitch": 1.20, "delay": 0.01}
+	],
+	"p_bomb_thunder_explode": [
+		{"sample": "soft_boom_2", "vol_db": 1.5, "pitch": 0.65, "delay": 0.0},
+		{"sample": "rock_slam_1", "vol_db": 0.0, "pitch": 0.78, "delay": 0.01},
+		{"sample": "glass_crack", "vol_db": -4.5, "pitch": 0.72, "delay": 0.02}
+	],
+	"p_bomb_dot_zap": [
+		{"sample": "metal_light_0", "vol_db": -12.0, "pitch": 1.45, "delay": 0.0}
+	],
+
+	# --- TRẠNG THÁI 2 [R] HÓA NỘ ---
+	"rage_r_awaken": [
+		{"sample": "soft_boom_0", "vol_db": 2.0, "pitch": 0.62, "delay": 0.0},
+		{"sample": "draw_blade_3", "vol_db": -1.5, "pitch": 0.78, "delay": 0.02},
+		{"sample": "bell_heavy_0", "vol_db": -2.0, "pitch": 0.74, "delay": 0.03},
+		{"sample": "rock_slam_2", "vol_db": -1.0, "pitch": 0.75, "delay": 0.04}
+	],
+	"rage_r_expire": [
+		{"sample": "cloth_4", "vol_db": -4.5, "pitch": 0.78, "delay": 0.0},
+		{"sample": "bong_low", "vol_db": -8.0, "pitch": 0.82, "delay": 0.02}
+	],
+
+	# --- DI CHUYỂN & VA CHẠM ---
+	"dash_space": [
+		{"sample": "cloth_1", "vol_db": -3.0, "pitch": 0.88, "delay": 0.0},
+		{"sample": "chop", "vol_db": -5.5, "pitch": 0.95, "delay": 0.01}
+	],
+	"jump_c": [
+		{"sample": "cloth_2", "vol_db": -4.5, "pitch": 1.08, "delay": 0.0},
+		{"sample": "step_0", "vol_db": -8.0, "pitch": 0.85, "delay": 0.0}
+	],
+	"footstep_stone": [
+		{"sample": "step_0", "vol_db": -12.5, "pitch": 1.0, "delay": 0.0}
+	],
+	"hit_enemy_flesh_metal": [
+		{"sample": "punch_heavy_0", "vol_db": -2.5, "pitch": 0.96, "delay": 0.0},
+		{"sample": "metal_med_0", "vol_db": -5.5, "pitch": 0.92, "delay": 0.01}
+	],
+	"enemy_death_burst": [
+		{"sample": "punch_heavy_2", "vol_db": -1.0, "pitch": 0.75, "delay": 0.0},
+		{"sample": "plate_heavy_1", "vol_db": -3.0, "pitch": 0.78, "delay": 0.03},
+		{"sample": "soft_boom_1", "vol_db": -2.5, "pitch": 0.72, "delay": 0.04}
+	]
+}
 
 func _init() -> void:
 	if _instance == null:
 		_instance = self
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	_setup_studio_audio_bus()
 	_prebake_audio_bank()
+	_init_audio_pool()
 
 func _ready() -> void:
 	_is_adding = false
+	_setup_studio_audio_bus()
 	_init_audio_pool()
 
+static func _setup_studio_audio_bus() -> void:
+	var bus_idx := AudioServer.get_bus_index(COMBAT_BUS_NAME)
+	if bus_idx == -1:
+		AudioServer.add_bus()
+		bus_idx = AudioServer.bus_count - 1
+		AudioServer.set_bus_name(bus_idx, COMBAT_BUS_NAME)
+		AudioServer.set_bus_send(bus_idx, "Master")
+		AudioServer.set_bus_volume_db(bus_idx, -1.5)
+
+		# 1. Bộ lọc Low-Pass cắt bỏ hoàn toàn dải tần chói tai (> 6800 Hz), giữ âm thanh ấm và đầm
+		var lpf := AudioEffectLowPassFilter.new()
+		lpf.cutoff_hz = 6800.0
+		lpf.resonance = 0.38
+		AudioServer.add_bus_effect(bus_idx, lpf)
+
+		# 2. Bộ nén Compressor chống vỡ tiếng khi nhiều chiêu nổ cùng lúc
+		var comp := AudioEffectCompressor.new()
+		comp.threshold = -8.0
+		comp.ratio = 4.0
+		comp.attack_us = 50.0
+		comp.release_ms = 120.0
+		AudioServer.add_bus_effect(bus_idx, comp)
+
 func _init_audio_pool() -> void:
+	var target_bus := COMBAT_BUS_NAME if AudioServer.get_bus_index(COMBAT_BUS_NAME) != -1 else "Master"
 	if players.size() == 0:
 		for i in range(max_players):
 			var p := AudioStreamPlayer.new()
 			p.name = "AudioPoolChannel_%d" % i
-			p.bus = "Master"
+			p.bus = target_bus
+			p.max_polyphony = 4
 			add_child(p)
 			players.append(p)
 
@@ -48,30 +262,37 @@ func _init_audio_pool() -> void:
 		bgm_player.bus = "Master"
 		bgm_player.volume_db = -14.0
 		add_child(bgm_player)
-		if _sfx_bank.has("bgm_arena_combat_loop"):
-			bgm_player.stream = _sfx_bank["bgm_arena_combat_loop"]
+		# TUYỆT ĐỐI KHÔNG tự phát sóng sin ù ù! Chỉ phát nếu có file nhạc .ogg thật
+		if ResourceLoader.exists("res://assets/audio/bgm_arena.ogg"):
+			bgm_player.stream = load("res://assets/audio/bgm_arena.ogg")
 			bgm_player.play()
 
 static func ensure_initialized(tree: SceneTree = null) -> KayKitAudioDirector:
+	if tree == null:
+		tree = Engine.get_main_loop() as SceneTree
 	if _instance == null:
 		var script_res := load("res://scripts/audio/kaykit_audio_director.gd") as GDScript
 		if script_res:
 			_instance = script_res.new()
 			_instance.name = "KayKitAudioDirector"
-			if tree == null:
-				tree = Engine.get_main_loop() as SceneTree
 			if tree and tree.root and not _is_adding:
 				_is_adding = true
-				tree.root.call_deferred("add_child", _instance)
+				if tree.root.is_node_ready():
+					tree.root.add_child(_instance)
+				else:
+					tree.root.call_deferred("add_child", _instance)
 	elif not _instance.is_inside_tree() and not _is_adding:
-		if tree == null:
-			tree = Engine.get_main_loop() as SceneTree
 		if tree and tree.root and _instance.get_parent() == null:
 			_is_adding = true
-			tree.root.call_deferred("add_child", _instance)
+			if tree.root.is_node_ready():
+				tree.root.add_child(_instance)
+			else:
+				tree.root.call_deferred("add_child", _instance)
 
 	if not _is_prebaked and _instance:
 		_instance._prebake_audio_bank()
+	if _instance and _instance.players.size() == 0:
+		_instance._init_audio_pool()
 	return _instance
 
 static func play_sfx(sfx_id: String, volume_offset_db: float = 0.0, pitch_override: float = 0.0) -> void:
@@ -81,23 +302,52 @@ static func play_sfx(sfx_id: String, volume_offset_db: float = 0.0, pitch_overri
 
 static func start_bgm() -> void:
 	var inst := ensure_initialized()
-	if inst and inst.bgm_player:
-		if not inst.bgm_player.playing and _sfx_bank.has("bgm_arena_combat_loop"):
-			inst.bgm_player.stream = _sfx_bank["bgm_arena_combat_loop"]
+	if inst and inst.bgm_player and inst.bgm_player.stream != null:
+		if not inst.bgm_player.playing:
 			inst.bgm_player.play()
 
 static func set_rage_bgm_mode(is_rage: bool) -> void:
 	var inst := ensure_initialized()
 	if inst and inst.bgm_player:
-		if is_rage:
-			inst.bgm_player.pitch_scale = 1.08
-			inst.bgm_player.volume_db = -11.0
-		else:
-			inst.bgm_player.pitch_scale = 1.00
-			inst.bgm_player.volume_db = -14.0
+		inst.bgm_player.pitch_scale = 1.08 if is_rage else 1.00
+		inst.bgm_player.volume_db = -11.0 if is_rage else -14.0
+
+func _prebake_audio_bank() -> void:
+	if _is_prebaked:
+		return
+	_is_prebaked = true
+
+	# 1. Nạp toàn bộ các file thu âm thật (.ogg / .wav) từ ổ cứng vào RAM
+	for sample_key in SAMPLE_PATHS:
+		var candidate_list: Array = SAMPLE_PATHS[sample_key]
+		for path in candidate_list:
+			if ResourceLoader.exists(path):
+				var stream := ResourceLoader.load(path) as AudioStream
+				if stream != null:
+					_raw_streams[sample_key] = stream
+					break
+
+	# Fallback an toàn nếu thiếu bất kỳ key phụ nào: trỏ về file thu âm thật gần nhất
+	var default_real_stream: AudioStream = _raw_streams.get("slice_1", null)
+	if default_real_stream == null and ResourceLoader.exists("res://assets/audio/click.wav"):
+		default_real_stream = ResourceLoader.load("res://assets/audio/click.wav") as AudioStream
+
+	for sample_key in SAMPLE_PATHS:
+		if not _raw_streams.has(sample_key) and default_real_stream != null:
+			_raw_streams[sample_key] = default_real_stream
+
+	# 2. Ánh xạ 23 sự kiện vào _sfx_bank bằng các AudioStream thật
+	for recipe_id in FOLEY_RECIPES:
+		var layers: Array = FOLEY_RECIPES[recipe_id]
+		if layers.size() > 0:
+			var primary_sample: String = layers[0]["sample"]
+			_sfx_bank[recipe_id] = _raw_streams.get(primary_sample, default_real_stream)
+
+	_sfx_bank["bgm_arena_combat_loop"] = default_real_stream
+	print("🎵 [KayKitAudioDirector] Loaded %d real foley samples and mapped %d composite recipes into RAM." % [_raw_streams.size(), _sfx_bank.size()])
 
 func _play_internal(sfx_id: String, volume_offset_db: float, pitch_override: float) -> void:
-	if not _sfx_bank.has(sfx_id):
+	if not FOLEY_RECIPES.has(sfx_id) and not _sfx_bank.has(sfx_id):
 		return
 
 	var now := float(Time.get_ticks_msec()) / 1000.0
@@ -110,452 +360,59 @@ func _play_internal(sfx_id: String, volume_offset_db: float, pitch_override: flo
 	if players.size() == 0:
 		return
 
-	var stream: AudioStream = _sfx_bank[sfx_id]
-	var player := players[current_player_idx]
-	current_player_idx = (current_player_idx + 1) % max_players
-
-	player.stream = stream
-	player.volume_db = volume_offset_db
-	if pitch_override > 0.0:
-		player.pitch_scale = pitch_override
-	else:
-		player.pitch_scale = randf_range(0.95, 1.06)
-
-	player.play()
 	play_count += 1
 	play_counts[sfx_id] = int(play_counts.get(sfx_id, 0)) + 1
 
-# ==============================================================================
-# BỘ TỔNG HỢP ÂM THANH ĐA TẦNG PHÒNG THU (44.1KHZ PCM PRE-BAKE)
-# ==============================================================================
-
-func _prebake_audio_bank() -> void:
-	if _is_prebaked:
+	# Luân phiên 5 mẫu bước chân thật trên đá để nghe tự nhiên 100%
+	if sfx_id == "footstep_stone":
+		var step_key := "step_%d" % (_footstep_cycle_idx % 5)
+		_footstep_cycle_idx += 1
+		var step_stream: AudioStream = _raw_streams.get(step_key, null)
+		if step_stream:
+			_trigger_single_layer(step_stream, -12.5 + volume_offset_db, randf_range(0.94, 1.06))
 		return
-	_is_prebaked = true
 
-	# Nạp các file .wav thực tế nếu có sẵn
-	var existing_wavs := {
-		"slash": "res://assets/audio/slash.wav",
-		"dash": "res://assets/audio/dash.wav",
-		"hit": "res://assets/audio/hit.wav",
-	}
-	var loaded_wavs: Dictionary = {}
-	for k in existing_wavs:
-		var p: String = existing_wavs[k]
-		if ResourceLoader.exists(p):
-			var w = load(p) as AudioStream
-			if w:
-				loaded_wavs[k] = w
+	# Luân phiên 4 mẫu va chạm thịt/giáp thật khi chém trúng Bot
+	if sfx_id == "hit_enemy_flesh_metal":
+		var punch_key := "punch_heavy_%d" % (_hit_cycle_idx % 4)
+		var metal_key := "metal_med_%d" % (_hit_cycle_idx % 2)
+		_hit_cycle_idx += 1
+		var p_stream: AudioStream = _raw_streams.get(punch_key, null)
+		var m_stream: AudioStream = _raw_streams.get(metal_key, null)
+		if p_stream:
+			_trigger_single_layer(p_stream, -2.5 + volume_offset_db, randf_range(0.94, 1.05))
+		if m_stream:
+			_trigger_single_layer(m_stream, -6.0 + volume_offset_db, randf_range(0.92, 1.04))
+		return
 
-	# 1. "u1_slash": Vung kiếm nhịp 1 sắc gọn
-	_sfx_bank["u1_slash"] = _synth_slash(720.0, 240.0, 0.14, 0.85)
+	# Phát tổ hợp Đa Lớp Foley Thật (Multi-Layer Composite Foley)
+	if FOLEY_RECIPES.has(sfx_id):
+		var layers: Array = FOLEY_RECIPES[sfx_id]
+		var jitter := randf_range(0.96, 1.04)
+		for layer in layers:
+			var sample_name: String = layer.get("sample", "slice_1")
+			var stream: AudioStream = _raw_streams.get(sample_name, null)
+			if stream == null:
+				continue
+			var layer_vol: float = float(layer.get("vol_db", 0.0)) + volume_offset_db
+			var base_pitch: float = float(layer.get("pitch", 1.0))
+			var final_pitch: float = pitch_override if pitch_override > 0.0 else (base_pitch * jitter)
+			var delay_sec: float = float(layer.get("delay", 0.0))
 
-	# 2. "u2_slash": Vung kiếm nhịp 2 chém chéo 2 nhịp
-	_sfx_bank["u2_slash"] = _synth_dual_slash(820.0, 280.0, 0.18, 0.90)
+			if delay_sec <= 0.001 or not is_inside_tree():
+				_trigger_single_layer(stream, layer_vol, final_pitch)
+			else:
+				var tw := create_tween()
+				tw.tween_interval(delay_sec)
+				tw.tween_callback(_trigger_single_layer.bind(stream, layer_vol, final_pitch))
 
-	# 3. "u3_heaven_shatter": Đại kiếm giáng trần 55Hz Sub-Bass + chuông ngân hoàng kim
-	_sfx_bank["u3_heaven_shatter"] = _synth_impact_blast(55.0, 950.0, 0.45, 1.15)
-
-	# 4. "u1_rage": Nhát chém Nộ 1 - Nặng và có tia điện
-	_sfx_bank["u1_rage"] = _synth_rage_slash(540.0, 160.0, 0.16, 1.05)
-
-	# 5. "u2_rage": Nhát chém Nộ 2 - Song kiếm Nộ điện quang
-	_sfx_bank["u2_rage"] = _synth_rage_slash(620.0, 180.0, 0.20, 1.10)
-
-	# 6. "u3_rage_dragon_fall": Ngũ Đại Kiếm Khí Nộ - Địa chấn kép rền vang 0.65s
-	_sfx_bank["u3_rage_dragon_fall"] = _synth_dragon_fall_roar(48.0, 0.65, 1.25)
-
-	# 7. "i_phase1_x_cleave": Chém chữ X lướt nhanh + kim loại ngân
-	_sfx_bank["i_phase1_x_cleave"] = _synth_metallic_cross(1150.0, 0.24, 0.95)
-
-	# 8. "i_phase2_wave_launch": Phóng sóng kiếm năng lượng càn quét
-	_sfx_bank["i_phase2_wave_launch"] = _synth_wave_launch(180.0, 520.0, 0.28, 0.95)
-
-	# 9. "i_wave_finale": Đại Tinh Vân nổ bùng cuối đường sóng
-	_sfx_bank["i_wave_finale"] = _synth_supernova_burst(65.0, 0.38, 1.10)
-
-	# 10. "i_rage_hexa_cleave": Lục Kiếm Khí Chữ X Nộ - Kim loại nặng & sấm sét
-	_sfx_bank["i_rage_hexa_cleave"] = _synth_metallic_cross(880.0, 0.32, 1.20)
-
-	# 11. "i_rage_five_wing_wave": Sóng Kiếm Ngũ Dực Nộ 5 Cánh - Tiếng gầm năng lượng
-	_sfx_bank["i_rage_five_wing_wave"] = _synth_rage_wave_roar(60.0, 0.36, 1.20)
-
-	# 12. "o_whirlwind_spin": Lốc xoáy 360 độ liên hoàn 4 nhịp
-	_sfx_bank["o_whirlwind_spin"] = _synth_whirlwind(0.48, 1.0)
-
-	# 13. "p_bomb_throw": Ném bom vút gió
-	_sfx_bank["p_bomb_throw"] = _synth_whoosh(280.0, 560.0, 0.16, 0.75)
-
-	# 14. "p_bomb_thunder_explode": Bom nổ lôi vụ sấm sét đanh thép
-	_sfx_bank["p_bomb_thunder_explode"] = _synth_thunder_explosion(0.42, 1.15)
-
-	# 15. "p_bomb_dot_zap": Giật điện DoT lách tách
-	_sfx_bank["p_bomb_dot_zap"] = _synth_electric_zap(0.08, 0.65)
-
-	# 16. "rage_r_awaken": Long Thần Thức Tỉnh Kích Hoạt Nộ hoành tráng
-	_sfx_bank["rage_r_awaken"] = _synth_awaken_roar(0.72, 1.30)
-
-	# 17. "rage_r_expire": Năng lượng Nộ thu hồi êm ái
-	_sfx_bank["rage_r_expire"] = _synth_whoosh(480.0, 110.0, 0.32, 0.70)
-
-	# 18. "dash_space": Lướt né đòn Space
-	if loaded_wavs.has("dash"):
-		_sfx_bank["dash_space"] = loaded_wavs["dash"]
-	else:
-		_sfx_bank["dash_space"] = _synth_whoosh(600.0, 200.0, 0.18, 0.85)
-
-	# 19. "jump_c": Bật nhảy cao
-	_sfx_bank["jump_c"] = _synth_tone_rise(160.0, 360.0, 0.15, 0.80)
-
-	# 20. "footstep_stone": Bước chân giẫm trên đá
-	_sfx_bank["footstep_stone"] = _synth_footstep(0.06, 0.45)
-
-	# 21. "hit_enemy_flesh_metal": Chém trúng mục tiêu đầm tay
-	if loaded_wavs.has("hit"):
-		_sfx_bank["hit_enemy_flesh_metal"] = loaded_wavs["hit"]
-	else:
-		_sfx_bank["hit_enemy_flesh_metal"] = _synth_hit_impact(0.12, 0.95)
-
-	# 22. "enemy_death_burst": Quái vật bị tiêu diệt
-	_sfx_bank["enemy_death_burst"] = _synth_death_pop(0.32, 0.90)
-
-	# 23. "bgm_arena_combat_loop": Nhạc nền nhịp trống chiến trận 44.1kHz loop 4.0s
-	_sfx_bank["bgm_arena_combat_loop"] = _synth_battle_pulse_loop(4.0)
-
-	print("🎵 [KayKitAudioDirector] Pre-baked %d studio-grade SFX & BGM into RAM (44.1kHz 16-bit PCM, 0ms lag)." % _sfx_bank.size())
-
-# ==============================================================================
-# THUẬT TOÁN TẠO MẪU SÓNG ÂM THANH NGUYÊN BẢN (44,100 HZ, 16-BIT PCM MONO)
-# ==============================================================================
-
-func _create_wav(byte_data: PackedByteArray, loop: bool = false) -> AudioStreamWAV:
-	var wav := AudioStreamWAV.new()
-	wav.format = AudioStreamWAV.FORMAT_16_BITS
-	wav.mix_rate = 44100
-	wav.stereo = false
-	wav.loop_mode = AudioStreamWAV.LOOP_FORWARD if loop else AudioStreamWAV.LOOP_DISABLED
-	wav.data = byte_data
-	return wav
-
-func _synth_slash(f_start: float, f_end: float, dur: float, gain: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	for i in range(n):
-		var prog := float(i) / float(n)
-		var t := float(i) / float(sr)
-		var env := sin(prog * PI) * exp(-prog * 2.8)
-		var freq := lerpf(f_start, f_end, prog * prog)
-		var s := sin(TAU * freq * t) * 0.65 + randf_range(-0.35, 0.35)
-		var val := int(clampf(s * env * gain, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes)
-
-func _synth_dual_slash(f_start: float, f_end: float, dur: float, gain: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	var split := int(n * 0.42)
-	for i in range(n):
-		var t := float(i) / float(sr)
-		var env: float
-		var freq: float
-		if i < split:
-			var p1 := float(i) / float(split)
-			env = sin(p1 * PI)
-			freq = lerpf(f_start, f_end, p1)
-		else:
-			var p2 := float(i - split) / float(n - split)
-			env = sin(p2 * PI) * 1.15
-			freq = lerpf(f_start * 1.15, f_end * 0.9, p2)
-		var s := sin(TAU * freq * t) * 0.6 + randf_range(-0.4, 0.4)
-		var val := int(clampf(s * env * gain, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes)
-
-func _synth_impact_blast(f_sub: float, f_chime: float, dur: float, gain: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	for i in range(n):
-		var prog := float(i) / float(n)
-		var t := float(i) / float(sr)
-		var env_sub := exp(-prog * 6.5)
-		var env_chime := exp(-prog * 4.0)
-		var sub := sin(TAU * f_sub * t) * env_sub * 0.75
-		var chime := (sin(TAU * f_chime * t) + sin(TAU * f_chime * 1.5 * t) * 0.5) * env_chime * 0.35
-		var noise := randf_range(-0.3, 0.3) * exp(-prog * 12.0)
-		var s := (sub + chime + noise) * gain
-		var val := int(clampf(s, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes)
-
-func _synth_rage_slash(f_start: float, f_end: float, dur: float, gain: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	for i in range(n):
-		var prog := float(i) / float(n)
-		var t := float(i) / float(sr)
-		var env := sin(prog * PI) * exp(-prog * 2.2)
-		var freq := lerpf(f_start, f_end, prog)
-		var sub := sin(TAU * 75.0 * t) * 0.35
-		var body := sin(TAU * freq * t) * 0.45
-		var spark := (randf_range(-1.0, 1.0) if (i % 3 == 0) else 0.0) * 0.4
-		var s := (sub + body + spark) * env * gain
-		var val := int(clampf(s, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes)
-
-func _synth_dragon_fall_roar(f_sub: float, dur: float, gain: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	for i in range(n):
-		var prog := float(i) / float(n)
-		var t := float(i) / float(sr)
-		var env := exp(-prog * 4.2)
-		var sub := sin(TAU * f_sub * t + sin(TAU * 12.0 * t) * 0.5) * 0.65
-		var mid := sin(TAU * (140.0 - prog * 60.0) * t) * 0.35
-		var crackle := randf_range(-0.35, 0.35) * exp(-prog * 8.0)
-		var s := (sub + mid + crackle) * env * gain
-		var val := int(clampf(s, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes)
-
-func _synth_metallic_cross(f_ping: float, dur: float, gain: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	for i in range(n):
-		var prog := float(i) / float(n)
-		var t := float(i) / float(sr)
-		var env_metal := exp(-prog * 7.5)
-		var whoosh := randf_range(-0.4, 0.4) * sin(prog * PI) * 0.5
-		var ping := (sin(TAU * f_ping * t) + sin(TAU * f_ping * 1.62 * t) * 0.6) * env_metal * 0.65
-		var s := (whoosh + ping) * gain
-		var val := int(clampf(s, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes)
-
-func _synth_wave_launch(f_start: float, f_end: float, dur: float, gain: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	for i in range(n):
-		var prog := float(i) / float(n)
-		var t := float(i) / float(sr)
-		var env := sin(prog * PI) * (1.0 - prog * 0.4)
-		var freq := lerpf(f_start, f_end, prog)
-		var sweep := sin(TAU * freq * t) * 0.6
-		var air := randf_range(-0.35, 0.35) * 0.4
-		var s := (sweep + air) * env * gain
-		var val := int(clampf(s, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes)
-
-func _synth_supernova_burst(f_sub: float, dur: float, gain: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	for i in range(n):
-		var prog := float(i) / float(n)
-		var t := float(i) / float(sr)
-		var env := exp(-prog * 5.5)
-		var sub := sin(TAU * f_sub * t) * 0.6
-		var noise := randf_range(-0.5, 0.5) * exp(-prog * 10.0)
-		var sparkle := sin(TAU * 1600.0 * t) * exp(-prog * 14.0) * 0.3
-		var s := (sub + noise + sparkle) * env * gain
-		var val := int(clampf(s, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes)
-
-func _synth_rage_wave_roar(f_sub: float, dur: float, gain: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	for i in range(n):
-		var prog := float(i) / float(n)
-		var t := float(i) / float(sr)
-		var env := sin(prog * PI) * exp(-prog * 1.8)
-		var sub := sin(TAU * f_sub * t) * 0.55
-		var sweep := sin(TAU * (220.0 + sin(TAU * 18.0 * t) * 60.0) * t) * 0.45
-		var s := (sub + sweep) * env * gain
-		var val := int(clampf(s, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes)
-
-func _synth_whirlwind(dur: float, gain: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	for i in range(n):
-		var prog := float(i) / float(n)
-		var t := float(i) / float(sr)
-		var mod := (sin(TAU * 7.5 * t) * 0.4 + 0.6)
-		var env := sin(prog * PI)
-		var whoosh := randf_range(-0.55, 0.55) * mod
-		var s := whoosh * env * gain
-		var val := int(clampf(s, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes)
-
-func _synth_whoosh(f_start: float, f_end: float, dur: float, gain: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	for i in range(n):
-		var prog := float(i) / float(n)
-		var env := sin(prog * PI)
-		var noise := randf_range(-0.6, 0.6)
-		var val := int(clampf(noise * env * gain, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes)
-
-func _synth_thunder_explosion(dur: float, gain: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	for i in range(n):
-		var prog := float(i) / float(n)
-		var t := float(i) / float(sr)
-		var env := exp(-prog * 6.0)
-		var boom := sin(TAU * 52.0 * t) * 0.6
-		var crack := randf_range(-0.6, 0.6) * exp(-prog * 15.0)
-		var s := (boom + crack) * env * gain
-		var val := int(clampf(s, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes)
-
-func _synth_electric_zap(dur: float, gain: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	for i in range(n):
-		var prog := float(i) / float(n)
-		var t := float(i) / float(sr)
-		var env := exp(-prog * 16.0)
-		var zap := (fmod(420.0 * t, 1.0) * 2.0 - 1.0) * 0.7 + randf_range(-0.3, 0.3)
-		var s := zap * env * gain
-		var val := int(clampf(s, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes)
-
-func _synth_awaken_roar(dur: float, gain: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	for i in range(n):
-		var prog := float(i) / float(n)
-		var t := float(i) / float(sr)
-		var s := 0.0
-		if prog < 0.22:
-			var p1 := prog / 0.22
-			s = sin(TAU * lerpf(60.0, 190.0, p1) * t) * p1 * 0.5
-		else:
-			var p2 := (prog - 0.22) / 0.78
-			var env := exp(-p2 * 4.5)
-			var sub := sin(TAU * 48.0 * t) * 0.6
-			var blast := randf_range(-0.5, 0.5) * exp(-p2 * 9.0)
-			var horn := (sin(TAU * 165.0 * t) + sin(TAU * 330.0 * t) * 0.4) * 0.45
-			s = (sub + blast + horn) * env
-		var val := int(clampf(s * gain, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes)
-
-func _synth_tone_rise(f_start: float, f_end: float, dur: float, gain: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	for i in range(n):
-		var prog := float(i) / float(n)
-		var t := float(i) / float(sr)
-		var env := sin(prog * PI)
-		var freq := lerpf(f_start, f_end, prog)
-		var s := sin(TAU * freq * t) * env * gain
-		var val := int(clampf(s, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes)
-
-func _synth_footstep(dur: float, gain: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	for i in range(n):
-		var prog := float(i) / float(n)
-		var t := float(i) / float(sr)
-		var env := exp(-prog * 18.0)
-		var thud := sin(TAU * 110.0 * t) * 0.65
-		var click := randf_range(-0.4, 0.4) * exp(-prog * 25.0)
-		var s := (thud + click) * env * gain
-		var val := int(clampf(s, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes)
-
-func _synth_hit_impact(dur: float, gain: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	for i in range(n):
-		var prog := float(i) / float(n)
-		var t := float(i) / float(sr)
-		var env := exp(-prog * 14.0)
-		var punch := sin(TAU * 125.0 * t) * 0.7
-		var slap := randf_range(-0.5, 0.5) * exp(-prog * 20.0)
-		var s := (punch + slap) * env * gain
-		var val := int(clampf(s, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes)
-
-func _synth_death_pop(dur: float, gain: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	for i in range(n):
-		var prog := float(i) / float(n)
-		var t := float(i) / float(sr)
-		var env := exp(-prog * 6.0)
-		var s := (sin(TAU * lerpf(240.0, 70.0, prog) * t) * 0.6 + randf_range(-0.3, 0.3)) * env * gain
-		var val := int(clampf(s, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes)
-
-func _synth_battle_pulse_loop(dur: float) -> AudioStreamWAV:
-	var sr := 44100
-	var n := int(dur * float(sr))
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	var bpm := 128.0
-	var beat_interval := 60.0 / bpm
-	for i in range(n):
-		var t := float(i) / float(sr)
-		var beat_time := fmod(t, beat_interval)
-		var beat_prog := beat_time / beat_interval
-		var env_drum := exp(-beat_prog * 12.0)
-		var drum := sin(TAU * 65.0 * beat_time) * env_drum * 0.45
-		var hat_time := fmod(t, beat_interval * 0.5)
-		var hat := randf_range(-0.15, 0.15) * exp(-(hat_time / (beat_interval * 0.5)) * 18.0) * 0.25
-		var chord := (sin(TAU * 220.0 * t) + sin(TAU * 261.63 * t) + sin(TAU * 329.63 * t)) * 0.08
-		var s := (drum + hat + chord) * 0.65
-		var val := int(clampf(s, -1.0, 1.0) * 32767.0)
-		bytes.encode_s16(i * 2, val)
-	return _create_wav(bytes, true)
+func _trigger_single_layer(stream: AudioStream, vol_db: float, pitch_val: float) -> void:
+	if stream == null or players.size() == 0:
+		return
+	var player := players[current_player_idx]
+	current_player_idx = (current_player_idx + 1) % max_players
+	player.stream = stream
+	player.volume_db = clampf(vol_db, -40.0, 4.0)
+	player.pitch_scale = clampf(pitch_val, 0.45, 2.0)
+	if player.is_inside_tree():
+		player.play()

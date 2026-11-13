@@ -2,9 +2,13 @@ class_name SynthAudio
 extends Node
 
 # ==============================================================================
-# SYNTH AUDIO - BỘ PHÁT ÂM THANH PROCEDURAL SFX TỔNG HỢP BẰNG CODE
-# Task 5.2: Triệt tiêu 100% lag - Pre-baked Cache & 12 AudioStreamPlayer Pool
+# SYNTH AUDIO (PURGED - DIRECTIVE 28)
+# - TUYỆT ĐỐI 0% SÓNG SIN TỰ CHẾ, 0% ENCODE_S16, 0% NOISE
+# - NẠP TRỰC TIẾP FILE ÂM THANH THẬT TỪ KENNEY RPG & IMPACT & INTERFACE PACKS
+# - TÍCH HỢP LIÊN THÔNG VỚI KAYKIT AUDIO DIRECTOR
 # ==============================================================================
+
+const KayKitAudioDirector = preload("res://scripts/audio/kaykit_audio_director.gd")
 
 static var _instance: SynthAudio = null
 static var _audio_cache: Dictionary = {}
@@ -57,13 +61,42 @@ func _prebake_cache() -> void:
 	if _is_prebaked:
 		return
 	_is_prebaked = true
-	_audio_cache["cast"] = _generate_tone(440.0, 660.0, 0.12, "sine")
-	_audio_cache["dash"] = _generate_noise_whoosh(0.18)
-	_audio_cache["explosion"] = _generate_explosion_boom(0.3)
-	_audio_cache["lightning"] = _generate_tone(150.0, 80.0, 0.22, "saw")
-	_audio_cache["pickup_crystal"] = _generate_chime([587.33, 880.0], 0.28)
-	_audio_cache["pickup_health"] = _generate_chime([523.25, 659.25, 783.99], 0.24)
-	print("🎵 [SYNTH AUDIO] Pre-baked 6 procedural waveform streams into cache.")
+
+	var p_cast = "res://assets/audio/rpg/knifeSlice.ogg"
+	if ResourceLoader.exists(p_cast):
+		_audio_cache["cast"] = ResourceLoader.load(p_cast)
+	elif ResourceLoader.exists("res://assets/audio/slash.wav"):
+		_audio_cache["cast"] = ResourceLoader.load("res://assets/audio/slash.wav")
+
+	var p_dash = "res://assets/audio/rpg/cloth1.ogg"
+	if ResourceLoader.exists(p_dash):
+		_audio_cache["dash"] = ResourceLoader.load(p_dash)
+	elif ResourceLoader.exists("res://assets/audio/dash.wav"):
+		_audio_cache["dash"] = ResourceLoader.load("res://assets/audio/dash.wav")
+
+	var p_exp = "res://assets/audio/impact/impactSoft_heavy_000.ogg"
+	if ResourceLoader.exists(p_exp):
+		_audio_cache["explosion"] = ResourceLoader.load(p_exp)
+	elif ResourceLoader.exists("res://assets/audio/hit.wav"):
+		_audio_cache["explosion"] = ResourceLoader.load("res://assets/audio/hit.wav")
+
+	var p_light = "res://assets/audio/impact/impactMetal_heavy_000.ogg"
+	if ResourceLoader.exists(p_light):
+		_audio_cache["lightning"] = ResourceLoader.load(p_light)
+
+	var p_crys = "res://assets/audio/ui/glass_004.wav"
+	if ResourceLoader.exists(p_crys):
+		_audio_cache["pickup_crystal"] = ResourceLoader.load(p_crys)
+	elif ResourceLoader.exists("res://assets/audio/crystal.wav"):
+		_audio_cache["pickup_crystal"] = ResourceLoader.load("res://assets/audio/crystal.wav")
+
+	var p_hp = "res://assets/audio/ui/bong_001.wav"
+	if ResourceLoader.exists(p_hp):
+		_audio_cache["pickup_health"] = ResourceLoader.load(p_hp)
+	elif ResourceLoader.exists("res://assets/audio/pickup_health.wav"):
+		_audio_cache["pickup_health"] = ResourceLoader.load("res://assets/audio/pickup_health.wav")
+
+	print("🎵 [SYNTH AUDIO PURGED] Preloaded %d authentic audio streams into cache (0%% synthetic sine/noise)." % _audio_cache.size())
 
 func _play(stream: AudioStream, volume_db: float = 0.0) -> void:
 	if not is_inside_tree() or players.size() == 0:
@@ -82,34 +115,22 @@ func _play(stream: AudioStream, volume_db: float = 0.0) -> void:
 	player.play()
 
 static func play_slash() -> void:
-	var inst = _ensure_instance()
-	if inst and _audio_cache.has("cast"):
-		inst._play(_audio_cache["cast"], -5.0)
+	KayKitAudioDirector.play_sfx("u1_slash")
 
 static func play_player_hit() -> void:
-	var inst = _ensure_instance()
-	if inst and _audio_cache.has("explosion"):
-		inst._play(_audio_cache["explosion"], -6.0)
+	KayKitAudioDirector.play_sfx("hit_enemy_flesh_metal")
 
 static func play_cast() -> void:
-	var inst = _ensure_instance()
-	if inst and _audio_cache.has("cast"):
-		inst._play(_audio_cache["cast"], -6.0)
+	KayKitAudioDirector.play_sfx("u2_slash")
 
 static func play_dash() -> void:
-	var inst = _ensure_instance()
-	if inst and _audio_cache.has("dash"):
-		inst._play(_audio_cache["dash"], -4.0)
+	KayKitAudioDirector.play_sfx("dash_space")
 
 static func play_explosion() -> void:
-	var inst = _ensure_instance()
-	if inst and _audio_cache.has("explosion"):
-		inst._play(_audio_cache["explosion"], -2.0)
+	KayKitAudioDirector.play_sfx("p_bomb_thunder_explode")
 
 static func play_lightning() -> void:
-	var inst = _ensure_instance()
-	if inst and _audio_cache.has("lightning"):
-		inst._play(_audio_cache["lightning"], -4.0)
+	KayKitAudioDirector.play_sfx("p_bomb_dot_zap")
 
 static func play_crystal_pickup() -> void:
 	var inst = _ensure_instance()
@@ -123,104 +144,3 @@ static func play_health_pickup() -> void:
 	var inst = _ensure_instance()
 	if inst and _audio_cache.has("pickup_health"):
 		inst._play(_audio_cache["pickup_health"], 0.0)
-
-# ==============================================================================
-# PROCEDURAL WAVEFORM GENERATORS (ONLY RUN ONCE AT INIT)
-# ==============================================================================
-
-func _generate_tone(start_freq: float, end_freq: float, duration: float, wave_type: String = "sine") -> AudioStreamWAV:
-	var sample_rate = 22050
-	var num_samples = int(duration * sample_rate)
-	var byte_array = PackedByteArray()
-	byte_array.resize(num_samples * 2)
-	
-	for i in range(num_samples):
-		var t = float(i) / float(sample_rate)
-		var progress = float(i) / float(num_samples)
-		var freq = lerp(start_freq, end_freq, progress)
-		var envelope = 1.0 - progress
-		
-		var sample_val := 0.0
-		if wave_type == "sine":
-			sample_val = sin(TAU * freq * t)
-		elif wave_type == "saw":
-			sample_val = (fmod(freq * t, 1.0) * 2.0 - 1.0)
-		
-		var val_16 = int(clamp(sample_val * envelope * 0.75, -1.0, 1.0) * 32767.0)
-		byte_array.encode_s16(i * 2, val_16)
-		
-	var wav = AudioStreamWAV.new()
-	wav.format = AudioStreamWAV.FORMAT_16_BITS
-	wav.mix_rate = sample_rate
-	wav.stereo = false
-	wav.data = byte_array
-	return wav
-
-func _generate_noise_whoosh(duration: float) -> AudioStreamWAV:
-	var sample_rate = 22050
-	var num_samples = int(duration * sample_rate)
-	var byte_array = PackedByteArray()
-	byte_array.resize(num_samples * 2)
-	
-	for i in range(num_samples):
-		var progress = float(i) / float(num_samples)
-		var envelope = sin(progress * PI)
-		var noise = randf_range(-1.0, 1.0)
-		var val_16 = int(clamp(noise * envelope * 0.45, -1.0, 1.0) * 32767.0)
-		byte_array.encode_s16(i * 2, val_16)
-		
-	var wav = AudioStreamWAV.new()
-	wav.format = AudioStreamWAV.FORMAT_16_BITS
-	wav.mix_rate = sample_rate
-	wav.stereo = false
-	wav.data = byte_array
-	return wav
-
-func _generate_explosion_boom(duration: float) -> AudioStreamWAV:
-	var sample_rate = 22050
-	var num_samples = int(duration * sample_rate)
-	var byte_array = PackedByteArray()
-	byte_array.resize(num_samples * 2)
-	
-	for i in range(num_samples):
-		var t = float(i) / float(sample_rate)
-		var progress = float(i) / float(num_samples)
-		var envelope = exp(-progress * 7.0)
-		var sub_bass = sin(TAU * 55.0 * t)
-		var noise = randf_range(-0.5, 0.5)
-		var sample_val = (sub_bass * 0.7 + noise * 0.3) * envelope
-		var val_16 = int(clamp(sample_val * 0.85, -1.0, 1.0) * 32767.0)
-		byte_array.encode_s16(i * 2, val_16)
-		
-	var wav = AudioStreamWAV.new()
-	wav.format = AudioStreamWAV.FORMAT_16_BITS
-	wav.mix_rate = sample_rate
-	wav.stereo = false
-	wav.data = byte_array
-	return wav
-
-func _generate_chime(notes: Array[float], duration: float) -> AudioStreamWAV:
-	var sample_rate = 22050
-	var num_samples = int(duration * sample_rate)
-	var byte_array = PackedByteArray()
-	byte_array.resize(num_samples * 2)
-	
-	for i in range(num_samples):
-		var t = float(i) / float(sample_rate)
-		var progress = float(i) / float(num_samples)
-		var envelope = exp(-progress * 5.0)
-		
-		var sample_val := 0.0
-		for freq in notes:
-			sample_val += sin(TAU * freq * t)
-		sample_val = (sample_val / float(notes.size())) * envelope
-		
-		var val_16 = int(clamp(sample_val * 0.65, -1.0, 1.0) * 32767.0)
-		byte_array.encode_s16(i * 2, val_16)
-		
-	var wav = AudioStreamWAV.new()
-	wav.format = AudioStreamWAV.FORMAT_16_BITS
-	wav.mix_rate = sample_rate
-	wav.stereo = false
-	wav.data = byte_array
-	return wav

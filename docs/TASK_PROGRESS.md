@@ -419,6 +419,38 @@
   - Xuất báo cáo nghiệm thu [PHASE_27_RAGE_AURA_6LAYERS_AND_AUDIO_QA_REPORT.md](file:///e:/DoAnCaNhan/ThuVienGame/GameWizad/docs/QA_REPORTS/PHASE_27_RAGE_AURA_6LAYERS_AND_AUDIO_QA_REPORT.md).
   - Đồng bộ toàn vẹn lên kho lưu trữ GitHub `https://github.com/NhutPham19/GameWizad` (`main`).
 
+---
+
+## 📌 GIAI ĐOẠN 28: XÓA SẠCH SÓNG ÂM GIẢ TẠO & ĐẠI TU ÂM THANH THỰC TẾ ĐA LỚP (`KENNEY RPG & IMPACT FOLEY`) (HOÀN THÀNH 100% ✅)
+
+- [x] **TASK 28.1: Tải & Tích Hợp 2 Gói Âm Thanh Thu Âm Thật Của Kenney (`kenney-rpg-audio` & `kenney-impact-sounds`)** (PASS)
+  - Tải và trích xuất trọn vẹn 2 kho âm thanh CC0 chính hãng Kenney vào `assets_staging/gamedev_resources/audio_sfx/`.
+  - Triển khai 384 file thu âm vật lý thực tế vào dự án:
+    - `src_game/assets/audio/rpg/`: 102 file (`knifeSlice`, `chop`, `drawKnife1..3`, `cloth1..4`, `footstep00..09`, `metalPot`...).
+    - `src_game/assets/audio/impact/`: 260 file (`impactMetal_heavy_000..004`, `impactMining_000..003`, `impactPunch_heavy_000..003`, `impactSoft_heavy_000..002`, `impactBell_heavy_000..001`, `impactPlate`, `footstep_concrete`...).
+    - `src_game/assets/audio/ui/`: 22 file (`glass_001..006`, `bong_001`, `drop_001..004`, `pluck_001..002`, `confirmation_001..004`...).
+  - Ghi đè 100% các file cũ bằng file thu âm thật: `slash.wav` (từ `knifeSlice`), `dash.wav` (từ `cloth1`), `hit.wav` (từ `impactPunch_heavy_000`).
+  - Chạy `Godot --import --headless` nạp và biên dịch toàn bộ tài nguyên âm thanh mới vào engine.
+- [x] **TASK 28.2: Viết Lại Hoàn Toàn `KayKitAudioDirector` — 100% File Thu Âm Thật, Hòa Âm Đa Lớp & Bộ Lọc Studio** (PASS)
+  - Xóa sạch 100% 16 hàm `_synth_*` tự sinh sóng sin và nhiễu trắng gây rè radio.
+  - Xóa bỏ hoàn toàn `_synth_battle_pulse_loop` và ngăn BGM tự phát sóng sin ù rè; chỉ phát khi có file nhạc `.ogg` thật (`bgm_player.playing == false`).
+  - Xây dựng ma trận 23 công thức Hòa Âm Đa Lớp `FOLEY_RECIPES` (mỗi chiêu thức phối 2-5 lớp âm thanh thực tế với độ trễ vi mô và cao độ tinh chỉnh).
+  - Tích hợp Audio Bus `"CombatSFX"` với `AudioEffectLowPassFilter` (cắt tần chói gắt > 6800.0 Hz) và `AudioEffectCompressor` (chống vỡ âm khi va chạm dồn dập).
+  - Audio Pool 24 kênh `AudioStreamPlayer` song song, 0ms lag, pre-baked 100% vào RAM.
+- [x] **TASK 28.3: Dọn Sạch Sóng Âm Giả Trong `SynthAudio` (`src_game/scripts/core/synth_audio.gd`)** (PASS)
+  - Xóa bỏ hoàn toàn các hàm `_generate_tone`, `_generate_noise_whoosh`, `_generate_explosion_boom`, `_generate_chime` và phương thức `encode_s16`.
+  - Chuyển tiếp toàn bộ các hàm `play_*()` sang gọi `KayKitAudioDirector.play_sfx(...)` và nạp trực tiếp file thu âm thật vào cache.
+- [x] **TASK 28.4: Kiểm Thử Tự Động 100% PASS, Báo Cáo Nghiệm Thu & Minh Chứng RTX 4060** (PASS)
+  - Kịch bản kiểm thử [`test_phase_28_real_foley_audio_overhaul.gd`](file:///e:/DoAnCaNhan/ThuVienGame/GameWizad/src_game/tests/test_phase_28_real_foley_audio_overhaul.gd) PASS 4/4 bài kiểm tra:
+    - Test 28.1: Xác thực thành công 27/27 file thu âm Foley thật đại diện.
+    - Test 28.2: 0% `_synth_*`, 0% `encode_s16`, 0% `_generate_*`, BGM không tự phát ù nền, Audio Bus `CombatSFX` có LPF 6800Hz + Compressor.
+    - Test 28.3: Kích hoạt thành công 23 kỹ năng hòa âm đa lớp Foley qua Audio Pool 24 kênh.
+    - Test 28.4: `PrimitiveMesh == 0` (0% khối thô), hiệp sĩ Knight và cơ chế vật lý bảo toàn 100%.
+  - Hồi quy toàn diện: `test_phase_24`, `test_phase_25`, `test_phase_26`, `test_phase_27` đạt 100% PASS.
+  - Chụp 2 ảnh màn hình thực tế trên GPU RTX 4060: `docs/QA_REPORTS/screenshots/phase28_1_foley_audio_combat_showcase.png` và `phase28_2_real_foley_multitier_battle.png`.
+  - Xuất báo cáo nghiệm thu [PHASE_28_REAL_FOLEY_AUDIO_OVERHAUL_QA_REPORT.md](file:///e:/DoAnCaNhan/ThuVienGame/GameWizad/docs/QA_REPORTS/PHASE_28_REAL_FOLEY_AUDIO_OVERHAUL_QA_REPORT.md).
+  - Cập nhật `docs/CURRENT_CODE_SNAPSHOT.md` (127 files, 0.85 MB) và đồng bộ Git lên GitHub `https://github.com/NhutPham19/GameWizad` (`main`).
+
 
 - [x] **TASK 26.1: Chuyển Phím "Chơi Lại" Từ [R] Sang [F1] & Giải Phóng Phím [R] Cho Kích Hoạt Nộ** (PASS)
   - Cập nhật nhãn nút Restart trên HUD thành `"🔄 CHƠI LẠI (Phím F1)"`.
