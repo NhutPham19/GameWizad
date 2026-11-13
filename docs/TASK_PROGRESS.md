@@ -483,8 +483,27 @@
     - Test 29.4: `PrimitiveMesh == 0` (0% khối thô), hiệp sĩ Knight và cơ chế vật lý bảo toàn 100%.
   - Chạy lại kiểm thử hồi quy `test_phase_27_rage_aura_6layers_and_audio_system.gd` PASS 100%.
 
+---
 
-- [x] **TASK 26.1: Chuyển Phím "Chơi Lại" Từ [R] Sang [F1] & Giải Phóng Phím [R] Cho Kích Hoạt Nộ** (PASS)
+## 📌 GIAI ĐOẠN 30: THIẾT KẾ LẠI HỆ THỐNG ÂM THANH TINH GỌN, TRẬT TỰ, CHUẨN XÁC (CLEAN & STRUCTURED AUDIO) (HOÀN THÀNH 100% ✅)
+
+- [x] **TASK 30.1: Tinh Gọn Hoàn Toàn `KayKitAudioDirector` (Clean AAA Audio Bank & Voice Choking)** (PASS)
+  - Xóa sạch hiện tượng chồng chéo 6-11 file/chiêu; loại bỏ hoàn toàn các file súng laser (`laserLarge`, `laserSmall`), tàu vũ trụ (`spaceEngineLarge`) và tiếng ù nền (`forceField`).
+  - Xóa bỏ `AudioEffectDistortion`, `AudioEffectChorus`, `AudioEffectStereoEnhance` gây rè vỡ tiếng trên AudioBus; giữ EQ6, Compressor và Reverb nhẹ nhàng trong trẻo.
+  - Áp dụng cấu trúc 1-2 lớp/đòn đánh thường, tối đa 3-4 lớp phân tách theo thời gian cho đòn kết liễu U3 và chiêu thức Nộ.
+  - Tích hợp Bộ Cắt Đuôi Âm Tự Động (`max_dur <= 0.55s` Envelope Fade-out mượt mà).
+  - Tích hợp Cơ Chế Nhường Kênh (`Voice Group Choking` trong 0.035s): Nhát chém sau tự làm mờ nhát chém trước, tự ngắt bước chân khi đang vung kiếm.
+  - Tắt hoàn toàn tiếng ù nền trong `rage_aura_loop_player` và `bgm_player` khi vào Nộ.
+
+- [x] **TASK 30.2: Xóa Bỏ Các Lệnh Gọi Chồng Âm Thanh Trong `HeroKnight3D`** (PASS)
+  - `_do_spin_attack()`: Chỉ gọi duy nhất `o_whirlwind_spin` (pitch 0.78 khi Nộ, không gọi chồng `u1_rage`).
+  - `_do_dodge()`: Chỉ gọi duy nhất `dash_space` (pitch 0.82 khi Nộ, không gọi chồng `i_phase2_wave_launch`).
+  - `_physics_process(delta)`: Điều chỉnh bước chân tách bạch, tự ngắt khi giao tranh.
+
+- [x] **TASK 30.3: Kiểm Thử Tự Động 100% PASS, Báo Cáo Nghiệm Thu & Đồng Bộ GitHub** (PASS)
+  - Kịch bản kiểm thử [`test_phase_30_clean_structured_audio.gd`](file:///e:/DoAnCaNhan/ThuVienGame/GameWizad/src_game/tests/test_phase_30_clean_structured_audio.gd) đạt PASS 100% cả 4 tiêu chuẩn (0% laser/spaceship files, 100% max_dur <= 0.55s, 0% distortion/chorus, 0% PrimitiveMesh).
+  - Kịch bản hồi quy `test_phase_27_rage_aura_6layers_and_audio_system.gd` đạt PASS 100%.
+
   - Cập nhật nhãn nút Restart trên HUD thành `"🔄 CHƠI LẠI (Phím F1)"`.
   - Thay thế toàn bộ mã bắt phím reload từ `KEY_R` sang `KEY_F1` (`Input.is_physical_key_pressed(KEY_F1)` và `_unhandled_input`).
   - Giải phóng phím vật lý `KEY_R` độc quyền cho cơ chế Hóa Nộ.

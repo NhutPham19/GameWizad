@@ -82,11 +82,9 @@ func _prebake_cache() -> void:
 	elif ResourceLoader.exists("res://assets/audio/hit.wav"):
 		_audio_cache["explosion"] = ResourceLoader.load("res://assets/audio/hit.wav")
 
-	var p_light = "res://assets/audio/scifi/laserLarge_000.ogg"
+	var p_light = "res://assets/audio/impact/impactMetal_heavy_000.ogg"
 	if ResourceLoader.exists(p_light):
 		_audio_cache["lightning"] = ResourceLoader.load(p_light)
-	elif ResourceLoader.exists("res://assets/audio/impact/impactMetal_heavy_000.ogg"):
-		_audio_cache["lightning"] = ResourceLoader.load("res://assets/audio/impact/impactMetal_heavy_000.ogg")
 
 	var p_crys = "res://assets/audio/pickup_crystal.wav"
 	if ResourceLoader.exists(p_crys):

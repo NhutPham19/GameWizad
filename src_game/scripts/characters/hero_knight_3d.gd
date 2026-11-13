@@ -668,15 +668,15 @@ func _physics_process(delta: float) -> void:
 					visual_root.rotation.y = _facing_angle
 			_play_anim(ANIM_RUN)
 
-			# Task 29.3: Âm thanh bước chân trên đá (Tách biệt Thường vs Nộ)
+			# Task 30.2: Âm thanh bước chân trên đá
 			if is_on_floor():
 				_footstep_timer -= delta
 				if _footstep_timer <= 0.0:
-					_footstep_timer = 0.22 if _is_rage_state_2 else 0.26
+					_footstep_timer = 0.25 if _is_rage_state_2 else 0.28
 					if _is_rage_state_2:
-						KayKitAudioDirector.play_sfx("footstep_stone", -4.0, 0.75)
+						KayKitAudioDirector.play_sfx("footstep_stone", 1.5, 0.88)
 					else:
-						KayKitAudioDirector.play_sfx("footstep_stone", -8.0, 1.0)
+						KayKitAudioDirector.play_sfx("footstep_stone", 0.0, 1.0)
 
 			# Task 27.1 Lớp 6: Tự động để lại tàn ảnh .glb Đỏ-Xanh khi chạy trong Nộ
 			if _is_rage_state_2 and is_on_floor() and visual_root:
@@ -1125,10 +1125,9 @@ func _do_spin_attack(aim_override: Vector3 = Vector3.ZERO) -> void:
 		return
 	_cd_q_timer = COOLDOWN_Q
 
-	# Task 29.3: Âm thanh lốc xoáy Q [O] (Thường vs Nộ)
+	# Task 30.2: Chỉ gọi duy nhất o_whirlwind_spin (khi Nộ thì hạ pitch xuống 0.78 cho đầm nặng, tuyệt đối không gọi chồng u1_rage!)
 	if _is_rage_state_2:
-		KayKitAudioDirector.play_sfx("o_whirlwind_spin", 2.5, 0.76)
-		KayKitAudioDirector.play_sfx("u1_rage", 0.0, 0.85)
+		KayKitAudioDirector.play_sfx("o_whirlwind_spin", 1.5, 0.78)
 	else:
 		KayKitAudioDirector.play_sfx("o_whirlwind_spin")
 
@@ -1195,10 +1194,9 @@ func _do_dodge() -> void:
 		return
 	_cd_dash_timer = COOLDOWN_DASH
 
-	# Task 29.3: Âm thanh lướt né Space (Thường vs Nộ)
+	# Task 30.2: Chỉ gọi duy nhất dash_space (tuyệt đối không gọi chồng i_phase2_wave_launch!)
 	if _is_rage_state_2:
-		KayKitAudioDirector.play_sfx("dash_space", 2.0, 0.78)
-		KayKitAudioDirector.play_sfx("i_phase2_wave_launch", -1.5, 0.82)
+		KayKitAudioDirector.play_sfx("dash_space", 1.0, 0.82)
 	else:
 		KayKitAudioDirector.play_sfx("dash_space")
 
